@@ -41,6 +41,13 @@ import {
   ChevronRight,
   Search,
   Zap,
+  Ban,
+  Wifi,
+  WifiOff,
+  Bell,
+  Gauge,
+  Microscope,
+  History,
 } from 'lucide-react';
 import { IncidentLog } from '@/hooks/useThreatIntelligence';
 
@@ -151,6 +158,11 @@ export default function IncidentResponse() {
   const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
   const [linkedAlerts, setLinkedAlerts] = useState<Record<string, any[]>>({});
 
+  // Response Actions state
+  const [responseActions, setResponseActions] = useState<any[]>([]);
+  const [responseLoading, setResponseLoading] = useState(false);
+  const [executingAction, setExecutingAction] = useState<string | null>(null);
+
   const loadIncidents = useCallback(async () => {
     setLoading(true);
     try {
@@ -212,10 +224,29 @@ export default function IncidentResponse() {
     }
   }, []);
 
+  const loadResponseActions = useCallback(async () => {
+    setResponseLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('response_actions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setResponseActions(data || []);
+    } catch (error) {
+      console.error('Error loading response actions:', error);
+    } finally {
+      setResponseLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadIncidents();
     loadScoredIncidents();
-  }, [loadIncidents, loadScoredIncidents]);
+    loadResponseActions();
+  }, [loadIncidents, loadScoredIncidents, loadResponseActions]);
 
   useRealtimeSubscription('incident_logs', ['INSERT', 'UPDATE'], useCallback(() => {
     loadIncidents();
@@ -224,6 +255,10 @@ export default function IncidentResponse() {
   useRealtimeSubscription('scored_incidents', ['INSERT', 'UPDATE'], useCallback(() => {
     loadScoredIncidents();
   }, [loadScoredIncidents]));
+
+  useRealtimeSubscription('response_actions', ['INSERT', 'UPDATE'], useCallback(() => {
+    loadResponseActions();
+  }, [loadResponseActions]));
 
   const calculateImpactScore = (severity: string): number => {
     switch (severity.toLowerCase()) {
@@ -418,6 +453,53 @@ export default function IncidentResponse() {
     }
   };
 
+  const executeResponseAction = async (
+    actionType: string,
+    targetIp: string,
+    incidentId?: string,
+    scoredIncidentId?: string,
+    parameters?: Record<string, unknown>,
+  ) => {
+    setExecutingAction(actionType);
+    try {
+      const { data, error } = await supabase.functions.invoke('execute-response', {
+        body: {
+          action_type: actionType,
+          target_ip: targetIp,
+          incident_id: incidentId || null,
+          scored_incident_id: scoredIncidentId || null,
+          parameters: parameters || {},
+          triggered_by: 'dashboard',
+        },
+      });
+      if (error) throw error;
+      toast.success(`${actionType.replace(/_/g, ' ')} executed for ${targetIp}`);
+      loadResponseActions();
+    } catch (err) {
+      console.error('Response action error:', err);
+      toast.error(`Failed to execute ${actionType}`);
+    } finally {
+      setExecutingAction(null);
+    }
+  };
+
+  const ACTION_BUTTONS = [
+    { type: 'block_ip', label: 'Block IP', icon: Ban, variant: 'destructive' as const },
+    { type: 'rate_limit', label: 'Rate Limit', icon: Gauge, variant: 'outline' as const },
+    { type: 'isolate_host', label: 'Isolate Host', icon: WifiOff, variant: 'destructive' as const },
+    { type: 'send_notification', label: 'Notify SOC', icon: Bell, variant: 'outline' as const },
+    { type: 'capture_forensics', label: 'Capture Forensics', icon: Microscope, variant: 'outline' as const },
+  ];
+
+  const getActionStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500 text-white';
+      case 'executing': return 'bg-blue-500 text-white';
+      case 'failed': return 'bg-destructive text-destructive-foreground';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Stats */}
@@ -489,6 +571,10 @@ export default function IncidentResponse() {
           <TabsTrigger value="incidents" className="flex items-center gap-1.5">
             <Shield className="h-4 w-4" />
             Incidents
+          </TabsTrigger>
+          <TabsTrigger value="response-actions" className="flex items-center gap-1.5">
+            <Zap className="h-4 w-4" />
+            Response Actions
           </TabsTrigger>
         </TabsList>
 
@@ -885,6 +971,125 @@ export default function IncidentResponse() {
                     </TabsContent>
                   </Tabs>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* ============== RESPONSE ACTIONS TAB ============== */}
+        <TabsContent value="response-actions">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Quick Actions Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Quick Actions
+                </CardTitle>
+                <CardDescription>
+                  Execute response actions against a target IP
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">Target IP</label>
+                  <input
+                    id="response-target-ip"
+                    type="text"
+                    placeholder="e.g. 10.0.0.50"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  {ACTION_BUTTONS.map(({ type, label, icon: Icon, variant }) => (
+                    <Button
+                      key={type}
+                      variant={variant}
+                      className="w-full justify-start"
+                      disabled={executingAction !== null}
+                      onClick={() => {
+                        const ipInput = document.getElementById('response-target-ip') as HTMLInputElement;
+                        const ip = ipInput?.value?.trim();
+                        if (!ip) {
+                          toast.error('Enter a target IP address');
+                          return;
+                        }
+                        executeResponseAction(type, ip);
+                      }}
+                    >
+                      <Icon className="h-4 w-4 mr-2" />
+                      {executingAction === type ? 'Executing...' : label}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Audit Log */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <History className="h-5 w-5" />
+                      Response Audit Log
+                    </CardTitle>
+                    <CardDescription>
+                      All executed response actions with status and results
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={loadResponseActions}>
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px]">
+                  {responseLoading ? (
+                    <div className="text-center text-muted-foreground py-8">Loading...</div>
+                  ) : responseActions.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">
+                      No response actions executed yet
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {responseActions.map((action: any) => (
+                        <div key={action.id} className="p-3 border rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge className={getActionStatusColor(action.status)}>
+                                {action.status}
+                              </Badge>
+                              <span className="font-medium text-sm">
+                                {action.action_type.replace(/_/g, ' ')}
+                              </span>
+                              {action.target_ip && (
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  → {action.target_ip}
+                                </span>
+                              )}
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {action.triggered_by}
+                            </Badge>
+                          </div>
+                          {action.result && (
+                            <div className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded p-2">
+                              {(action.result as any)?.message || JSON.stringify(action.result)}
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {new Date(action.created_at).toLocaleString()}
+                            {action.completed_at && (
+                              <span> • Completed: {new Date(action.completed_at).toLocaleString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
               </CardContent>
             </Card>
           </div>

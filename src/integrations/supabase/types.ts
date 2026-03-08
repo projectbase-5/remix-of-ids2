@@ -876,6 +876,66 @@ export type Database = {
         }
         Relationships: []
       }
+      response_actions: {
+        Row: {
+          action_type: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          incident_id: string | null
+          parameters: Json
+          result: Json | null
+          scored_incident_id: string | null
+          status: string
+          target_host: string | null
+          target_ip: string | null
+          triggered_by: string
+        }
+        Insert: {
+          action_type: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          parameters?: Json
+          result?: Json | null
+          scored_incident_id?: string | null
+          status?: string
+          target_host?: string | null
+          target_ip?: string | null
+          triggered_by?: string
+        }
+        Update: {
+          action_type?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          incident_id?: string | null
+          parameters?: Json
+          result?: Json | null
+          scored_incident_id?: string | null
+          status?: string
+          target_host?: string | null
+          target_ip?: string | null
+          triggered_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "response_actions_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incident_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "response_actions_scored_incident_id_fkey"
+            columns: ["scored_incident_id"]
+            isOneToOne: false
+            referencedRelation: "scored_incidents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scored_incidents: {
         Row: {
           alert_count: number
