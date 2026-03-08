@@ -1,62 +1,70 @@
-
-
-# Move ML Training to Web Worker
+# Enable Demo Data Across All Pages
 
 ## Problem
-ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-## Solution
-Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
+Currently, only 5 pages respond to demo mode: Overview, Monitor, Events, Alerts, and Detection Engine (via `dataStore`). The remaining ~16 pages fetch directly from Supabase and show empty states when demo mode is on.
 
-```text
-UI Thread                    Web Worker
-   │                            │
-   ├─ postMessage({algorithm}) ──►
-   │                            ├─ generateSyntheticData()
-   │  ◄── progress(30%) ───────┤
-   │                            ├─ preprocessData()
-   │  ◄── progress(60%) ───────┤
-   │                            ├─ trainModel()
-   │  ◄── progress(90%) ───────┤
-   │                            ├─ calculateMetrics()
-   │  ◄── result({metrics}) ───┤
-   │                            │
-   ▼ Update UI + save to DB     ▼
-```
+## Approach
 
-## Files to Create
+Pass `isDemoMode` to every component and add local synthetic data generation when demo mode is active. Each component will check `isDemoMode` and either show generated demo data or fetch from Supabase.
 
-### 1. `src/workers/mlTraining.worker.ts`
-A self-contained Web Worker that:
-- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
-- Contains data generation, normalization, SMOTE, feature extraction logic
-- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
-- Listens for `{ type: 'train', algorithm }` messages
-- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
+## Pages Needing Demo Data
 
-**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
 
-### 2. `src/hooks/useMLWorker.ts`
-A hook that:
-- Creates/manages the Worker instance
-- Exposes `trainInWorker(algorithm)` returning a Promise
-- Forwards progress updates to a callback
-- Handles cleanup on unmount
+| Page            | Component                   | Current Data Source             | Demo Data Needed                   |
+| --------------- | --------------------------- | ------------------------------- | ---------------------------------- |
+| Incidents       | IncidentResponse            | Supabase `scored_incidents`     | Synthetic incidents with timelines |
+| Correlation     | CorrelationEngine           | Supabase `correlation_events`   | Synthetic correlation groups       |
+| Threat Intel    | ThreatIntelligenceDashboard | Supabase `ip_reputation`        | Fake IP reputations, threat feeds  |
+| Assets          | AssetInventory              | Supabase `asset_inventory`      | Sample network assets              |
+| Topology        | NetworkTopology             | Supabase `network_topology`     | Sample topology edges/nodes        |
+| Timeline        | AttackTimeline              | Supabase `attack_timelines`     | Sample kill-chain timelines        |
+| Hunt            | ThreatHunter                | Supabase `hunt_results`         | Sample hunt results                |
+| Risk Dashboard  | RiskScoreDashboard          | Supabase `host_risk_scores`     | Sample risk scores                 |
+| ML Models       | MLModelManager              | Supabase `ml_models`            | Sample trained models              |
+| Inference       | RealtimeInference           | Supabase `predictions`          | Sample predictions                 |
+| Adaptive        | AdaptiveLearning            | Supabase `adaptive_configs`     | Sample configs                     |
+| ML Metrics      | MLMetricsDashboard          | Supabase `model_evaluations`    | Sample evaluations                 |
+| Detection Rules | EnhancedRuleManager         | Supabase `detection_rules`      | Sample Snort/Suricata rules        |
+| Malware Sigs    | MalwareSignatureManager     | Supabase (malware data)         | Sample signatures                  |
+| Datasets        | DatasetManager              | Local hook                      | Already works locally              |
+| Retention       | DataRetention               | Supabase `retention_policies`   | Sample policies                    |
+| Notifications   | AlertNotifications          | Supabase `notification_configs` | Sample notification configs        |
 
-## Files to Modify
 
-### 3. `src/components/MLModelManager.tsx`
-- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
-- `trainNewModel` sends work to the worker, receives metrics back
-- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
-- Progress bar driven by worker progress messages
+## Implementation
 
-### 4. `src/hooks/useMLPipeline.ts`
-- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
-- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
+### 1. Create `src/lib/demoData.ts`
 
-## Technical Notes
-- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
-- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
-- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
+A single file containing all synthetic demo datasets — arrays of fake incidents, assets, topology edges, risk scores, ML models, rules, etc. This keeps demo logic centralized and out of component files.
 
+### 2. Update `src/pages/Index.tsx`
+
+Pass `isDemoMode={dataStore.isDemoMode}` prop to every component in the `renderContent()` switch statement.
+
+### 3. Update each component
+
+For each of the ~16 components above:
+
+- Accept an `isDemoMode?: boolean` prop
+- In the data-fetching `useEffect`, check `isDemoMode`: if true, load from `demoData.ts` instead of calling Supabase
+- Demo data loads instantly (no loading spinner)
+
+### Files Changed
+
+
+| File                  | Change                                            |
+| --------------------- | ------------------------------------------------- |
+| `src/lib/demoData.ts` | **New** — all demo datasets                       |
+| `src/pages/Index.tsx` | Pass `isDemoMode` to all components               |
+| 16 component files    | Accept `isDemoMode` prop, use demo data when true |
+
+
+### Key Design Decisions
+
+- Demo data is static snapshots with realistic values (IPs, timestamps, scores)
+- Components that already receive `dataStore` (Overview, Events, Alerts, Engine) continue as-is — they already work
+- NetworkMonitor already accepts `isDemoMode` — no change needed
+- DatasetManager works locally — no change needed  
+  
+make sure when the demo mode is turned back to off all the datas that are displayed on the demo mode shoudl be erased and should be ready to fetch when the real attack comes  
