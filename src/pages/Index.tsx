@@ -319,6 +319,10 @@ const Index = () => {
           <TabsContent value="risk">
             <RiskScoreDashboard />
           </TabsContent>
+
+          <TabsContent value="timeline">
+            <AttackTimeline />
+          </TabsContent>
         </Tabs>
       </main>
     </div>;
