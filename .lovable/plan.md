@@ -1,55 +1,62 @@
 
 
-# Plan: Log Query Engine + Attack Simulator
+# Move ML Training to Web Worker
 
-## 1. Log Storage & Query Engine
+## Problem
+ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-### What exists
-The Hunt page (`ThreatHunter.tsx`) already queries `incident_logs`, `predictions`, and `ip_reputation` with filters (IP, severity, time range, score). However, it does **not** query `network_traffic` or `flow_metrics_log` directly — the two most important tables for analyst investigation.
+## Solution
+Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
 
-### Changes
+```text
+UI Thread                    Web Worker
+   │                            │
+   ├─ postMessage({algorithm}) ──►
+   │                            ├─ generateSyntheticData()
+   │  ◄── progress(30%) ───────┤
+   │                            ├─ preprocessData()
+   │  ◄── progress(60%) ───────┤
+   │                            ├─ trainModel()
+   │  ◄── progress(90%) ───────┤
+   │                            ├─ calculateMetrics()
+   │  ◄── result({metrics}) ───┤
+   │                            │
+   ▼ Update UI + save to DB     ▼
+```
 
-**Backend — `docs/event_query_engine.py`** (Create)
-- Python module that queries Supabase REST API across all event tables: `network_traffic`, `flow_metrics_log`, `incident_logs`, `live_alerts`, `predictions`
-- Accepts filter parameters: IP, time range, protocol, attack type, severity
-- Returns unified results sorted by timestamp
+## Files to Create
 
-**Frontend — Enhance `ThreatHunter.tsx`**
-- Add a new "Log Search" tab alongside existing Filter Search / Advanced Hunts / Hunt Results tabs
-- This tab queries `network_traffic` and `live_alerts` directly from Supabase with full filter support
-- Add filters: protocol, port, payload keyword search (ilike on `payload_preview`), attack type dropdown
-- Add a category dropdown for quick searches: "All Traffic", "DNS Anomalies", "C2 Alerts", "Suspicious Only"
-- Results show: timestamp, source IP, dest IP, protocol, port, packet size, payload preview, suspicious flag
+### 1. `src/workers/mlTraining.worker.ts`
+A self-contained Web Worker that:
+- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
+- Contains data generation, normalization, SMOTE, feature extraction logic
+- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
+- Listens for `{ type: 'train', algorithm }` messages
+- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
 
-## 2. Attack Simulation Engine
+**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
 
-### What exists
-The Detection Engine page has start/stop controls but no simulation capability.
+### 2. `src/hooks/useMLWorker.ts`
+A hook that:
+- Creates/manages the Worker instance
+- Exposes `trainInWorker(algorithm)` returning a Promise
+- Forwards progress updates to a callback
+- Handles cleanup on unmount
 
-### Changes
+## Files to Modify
 
-**Backend — `docs/attack_simulator.py`** (Create)
-- Python module with functions: `simulate_port_scan()`, `simulate_ddos()`, `simulate_beacon()`, `simulate_exfiltration()`
-- Each function generates synthetic packets and sends them to the `ingest-traffic` edge function
-- Configurable parameters: target IP, duration, intensity
+### 3. `src/components/MLModelManager.tsx`
+- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
+- `trainNewModel` sends work to the worker, receives metrics back
+- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
+- Progress bar driven by worker progress messages
 
-**Frontend — New `AttackSimulator.tsx` component**
-- Card-based UI with simulation types: Port Scan, DoS Flood, C2 Beacon, Data Exfiltration
-- Each card has: description, configurable parameters (target IP, duration), Run button
-- Simulation runs client-side by inserting test records into `network_traffic` and `live_alerts` via Supabase (for demo/testing purposes)
-- Status indicator showing active simulation, results count
-- Add to Detection Engine page as a new "Simulations" tab
+### 4. `src/hooks/useMLPipeline.ts`
+- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
+- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
 
-**Wire into Index.tsx and DashboardSidebar**
-- No new page needed — add as a tab inside the existing Engine page
-
-## Files to Create/Modify
-
-| File | Action |
-|------|--------|
-| `docs/event_query_engine.py` | Create — Python query module |
-| `docs/attack_simulator.py` | Create — Python simulation module |
-| `src/components/ThreatHunter.tsx` | Modify — Add "Log Search" tab querying network_traffic and live_alerts |
-| `src/components/AttackSimulator.tsx` | Create — Simulation UI component |
-| `src/components/DetectionEngine.tsx` | Modify — Add "Simulations" tab with AttackSimulator |
+## Technical Notes
+- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
+- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
+- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
 

@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Brain, AlertTriangle, Play, Pause } from "lucide-react";
+import { Brain, AlertTriangle, Play, Pause, FlaskConical } from "lucide-react";
 import RuleManager from "./RuleManager";
 import ThreatCorrelator from "./ThreatCorrelator";
+import AttackSimulator from "./AttackSimulator";
 import { useToast } from "@/hooks/use-toast";
 import { useIDSDataStore, NetworkEvent, ThreatDetection } from "@/hooks/useIDSDataStore";
 import { useThreatIntelligence } from "@/hooks/useThreatIntelligence";
@@ -324,10 +325,11 @@ const DetectionEngine = ({ dataStore }: DetectionEngineProps) => {
       </Card>
 
       <Tabs defaultValue="rules" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="rules">Detection Rules</TabsTrigger>
           <TabsTrigger value="threats">Threat Analysis</TabsTrigger>
           <TabsTrigger value="correlator">Threat Correlator</TabsTrigger>
+          <TabsTrigger value="simulations">Simulations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rules">
@@ -415,6 +417,21 @@ const DetectionEngine = ({ dataStore }: DetectionEngineProps) => {
 
         <TabsContent value="correlator">
           <ThreatCorrelator threats={dataStore.threats} networkEvents={dataStore.networkEvents} />
+        </TabsContent>
+
+        <TabsContent value="simulations">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <FlaskConical className="h-5 w-5" />
+                <span>Attack Simulations</span>
+              </CardTitle>
+              <CardDescription>Generate synthetic attack traffic to test IDS detection capabilities</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AttackSimulator />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
