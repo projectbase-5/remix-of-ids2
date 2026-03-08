@@ -166,6 +166,27 @@ export function DashboardSidebar({ activeTab, onTabChange }: DashboardSidebarPro
             );
           }
 
+          // When collapsed, show items directly without collapsible
+          if (collapsed) {
+            return (
+              <SidebarGroup key={group.label}>
+                <SidebarMenu>
+                  {group.items.map((item) => (
+                    <SidebarMenuItem key={item.value}>
+                      <SidebarMenuButton
+                        isActive={activeTab === item.value}
+                        tooltip={item.title}
+                        onClick={() => onTabChange(item.value)}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+            );
+          }
+
           return (
             <Collapsible
               key={group.label}
@@ -176,12 +197,8 @@ export function DashboardSidebar({ activeTab, onTabChange }: DashboardSidebarPro
                 <CollapsibleTrigger asChild>
                   <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent rounded-md pr-2">
                     <group.icon className="h-4 w-4 mr-2 shrink-0" />
-                    {!collapsed && (
-                      <>
-                        <span className="flex-1">{group.label}</span>
-                        <ChevronDown className="h-3 w-3 ml-auto transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                      </>
-                    )}
+                    <span className="flex-1">{group.label}</span>
+                    <ChevronDown className="h-3 w-3 ml-auto transition-transform group-data-[state=open]/collapsible:rotate-180" />
                   </SidebarGroupLabel>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -195,7 +212,7 @@ export function DashboardSidebar({ activeTab, onTabChange }: DashboardSidebarPro
                             onClick={() => onTabChange(item.value)}
                           >
                             <item.icon className="h-4 w-4 shrink-0" />
-                            {!collapsed && <span>{item.title}</span>}
+                            <span>{item.title}</span>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       ))}
