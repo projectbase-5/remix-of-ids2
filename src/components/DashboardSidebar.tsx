@@ -4,7 +4,6 @@ import {
   FileSearch,
   Settings2,
   Bug,
-  Skull,
   ShieldAlert,
   Link2,
   Crosshair,
@@ -12,7 +11,6 @@ import {
   Clock,
   AlertOctagon,
   Bell,
-  MessageSquareWarning,
   List,
   Database,
   Server,
@@ -22,8 +20,9 @@ import {
   Zap,
   RefreshCw,
   BarChart3,
-  Globe,
   ChevronDown,
+  MessageSquareWarning,
+  Cog,
 } from "lucide-react";
 
 import {
@@ -43,7 +42,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import logo from "@/assets/logo.png";
 
 interface NavItem {
   title: string;
@@ -59,21 +57,22 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    label: "Overview",
+    label: "Operations",
     icon: LayoutDashboard,
     items: [
-      { title: "Dashboard", value: "overview", icon: LayoutDashboard },
+      { title: "Overview", value: "overview", icon: LayoutDashboard },
+      { title: "Monitor", value: "monitor", icon: Radio },
+      { title: "Alerts", value: "alerts", icon: MessageSquareWarning },
+      { title: "Events", value: "events", icon: List },
     ],
   },
   {
-    label: "Detection",
-    icon: ShieldAlert,
+    label: "Incidents",
+    icon: AlertOctagon,
     items: [
-      { title: "Monitor", value: "monitor", icon: Radio },
-      { title: "Detection Rules", value: "rules", icon: FileSearch },
-      { title: "Engine", value: "engine", icon: Settings2 },
-      { title: "Malware Sigs", value: "malware", icon: Bug },
-      { title: "Malware Behavior", value: "malware-behavior", icon: Skull },
+      { title: "Incidents", value: "incidents", icon: AlertOctagon },
+      { title: "Correlation", value: "correlation", icon: Link2 },
+      { title: "Timeline", value: "timeline", icon: Clock },
     ],
   },
   {
@@ -81,36 +80,23 @@ const navGroups: NavGroup[] = [
     icon: Crosshair,
     items: [
       { title: "Threat Intel", value: "threats", icon: ShieldAlert },
-      { title: "Correlation", value: "correlation", icon: Link2 },
       { title: "Hunt", value: "hunt", icon: Crosshair },
-      { title: "Risk Scores", value: "risk", icon: Gauge },
-      { title: "Timeline", value: "timeline", icon: Clock },
-    ],
-  },
-  {
-    label: "Response",
-    icon: AlertOctagon,
-    items: [
-      { title: "Incidents", value: "incidents", icon: AlertOctagon },
-      { title: "Alerts", value: "alerts", icon: MessageSquareWarning },
-      { title: "Notifications", value: "notifications", icon: Bell },
-    ],
-  },
-  {
-    label: "Data",
-    icon: Database,
-    items: [
-      { title: "Events", value: "events", icon: List },
-      { title: "Datasets", value: "datasets", icon: Database },
+      { title: "Risk Dashboard", value: "risk", icon: Gauge },
       { title: "Assets", value: "assets", icon: Server },
-      { title: "Topology", value: "topology", icon: Network },
-      { title: "Retention", value: "retention", icon: Archive },
     ],
   },
   {
-    label: "ML",
+    label: "Topology",
+    icon: Network,
+    items: [
+      { title: "Topology", value: "topology", icon: Network },
+    ],
+  },
+  {
+    label: "Detection Engine",
     icon: Brain,
     items: [
+      { title: "Engine", value: "engine", icon: Settings2 },
       { title: "ML Models", value: "ml", icon: Brain },
       { title: "Inference", value: "inference", icon: Zap },
       { title: "Adaptive", value: "adaptive", icon: RefreshCw },
@@ -118,10 +104,20 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Map",
-    icon: Globe,
+    label: "Configuration",
+    icon: Cog,
     items: [
-      { title: "Threat Map", value: "map", icon: Globe },
+      { title: "Detection Rules", value: "rules", icon: FileSearch },
+      { title: "Malware Sigs", value: "malware", icon: Bug },
+      { title: "Datasets", value: "datasets", icon: Database },
+      { title: "Retention", value: "retention", icon: Archive },
+    ],
+  },
+  {
+    label: "Notifications",
+    icon: Bell,
+    items: [
+      { title: "Notifications", value: "notifications", icon: Bell },
     ],
   },
 ];
@@ -149,8 +145,33 @@ export function DashboardSidebar({ activeTab, onTabChange }: DashboardSidebarPro
       <SidebarContent>
         {navGroups.map((group) => {
           const groupActive = group.items.some((i) => i.value === activeTab);
+          // Single-item groups render without collapsible
+          if (group.items.length === 1) {
+            const item = group.items[0];
+            return (
+              <SidebarGroup key={group.label}>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={activeTab === item.value}
+                      tooltip={item.title}
+                      onClick={() => onTabChange(item.value)}
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroup>
+            );
+          }
+
           return (
-            <Collapsible key={group.label} defaultOpen={groupActive || group.label === "Overview"} className="group/collapsible">
+            <Collapsible
+              key={group.label}
+              defaultOpen={groupActive || group.label === "Operations"}
+              className="group/collapsible"
+            >
               <SidebarGroup>
                 <CollapsibleTrigger asChild>
                   <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent rounded-md pr-2">
