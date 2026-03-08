@@ -449,6 +449,53 @@ export default function IncidentResponse() {
     }
   };
 
+  const executeResponseAction = async (
+    actionType: string,
+    targetIp: string,
+    incidentId?: string,
+    scoredIncidentId?: string,
+    parameters?: Record<string, unknown>,
+  ) => {
+    setExecutingAction(actionType);
+    try {
+      const { data, error } = await supabase.functions.invoke('execute-response', {
+        body: {
+          action_type: actionType,
+          target_ip: targetIp,
+          incident_id: incidentId || null,
+          scored_incident_id: scoredIncidentId || null,
+          parameters: parameters || {},
+          triggered_by: 'dashboard',
+        },
+      });
+      if (error) throw error;
+      toast.success(`${actionType.replace(/_/g, ' ')} executed for ${targetIp}`);
+      loadResponseActions();
+    } catch (err) {
+      console.error('Response action error:', err);
+      toast.error(`Failed to execute ${actionType}`);
+    } finally {
+      setExecutingAction(null);
+    }
+  };
+
+  const ACTION_BUTTONS = [
+    { type: 'block_ip', label: 'Block IP', icon: Ban, variant: 'destructive' as const },
+    { type: 'rate_limit', label: 'Rate Limit', icon: Gauge, variant: 'outline' as const },
+    { type: 'isolate_host', label: 'Isolate Host', icon: WifiOff, variant: 'destructive' as const },
+    { type: 'send_notification', label: 'Notify SOC', icon: Bell, variant: 'outline' as const },
+    { type: 'capture_forensics', label: 'Capture Forensics', icon: Microscope, variant: 'outline' as const },
+  ];
+
+  const getActionStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-500 text-white';
+      case 'executing': return 'bg-blue-500 text-white';
+      case 'failed': return 'bg-destructive text-destructive-foreground';
+      default: return 'bg-muted text-muted-foreground';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Stats */}
