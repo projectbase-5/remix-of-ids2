@@ -325,6 +325,55 @@ const AdaptiveLearning: React.FC = () => {
             </TabsContent>
             
             <TabsContent value="drift" className="space-y-4">
+              {/* Drift Summary */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{(driftStats.driftScore * 100).toFixed(1)}%</div>
+                        <div className="text-sm text-muted-foreground">Drift Score</div>
+                      </div>
+                      <Badge variant={driftStats.isDrifting ? 'destructive' : 'default'}>
+                        {driftStats.isDrifting ? 'Drift Detected' : 'Stable'}
+                      </Badge>
+                      {driftStats.lastRetrained && (
+                        <div className="text-sm text-muted-foreground">
+                          Last retrained: {driftStats.lastRetrained.toLocaleString()}
+                        </div>
+                      )}
+                      <div className="text-sm text-muted-foreground">
+                        Pending feedback: {driftStats.pendingFeedbackCount}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => checkDrift(activeConfig.drift_threshold)}
+                      >
+                        Check Now
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleRetrain}
+                        disabled={isRetraining}
+                        className="flex items-center space-x-1"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isRetraining ? 'animate-spin' : ''}`} />
+                        <span>{isRetraining ? 'Retraining...' : 'Retrain Now'}</span>
+                      </Button>
+                    </div>
+                  </div>
+                  {isRetraining && (
+                    <div className="mt-3">
+                      <Progress value={retrainProgress.value} className="h-2" />
+                      <div className="text-xs text-muted-foreground mt-1">{retrainProgress.stage}</div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Concept Drift Detection</CardTitle>
