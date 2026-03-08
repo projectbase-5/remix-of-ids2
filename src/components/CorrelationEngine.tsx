@@ -205,7 +205,7 @@ const CorrelationEngine = ({ isDemoMode }: { isDemoMode?: boolean }) => {
     </Card>
   );
 
-  const displayGroups = historicalMode ? historicalGroups : groups;
+  const displayGroups = isDemoMode ? demoGroups : (historicalMode ? historicalGroups : groups);
   const multiStage = displayGroups.filter(g => g.isMultiStage);
 
   return (

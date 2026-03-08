@@ -86,7 +86,7 @@ export interface IncidentLog {
   created_at: string;
 }
 
-export function useThreatIntelligence() {
+export function useThreatIntelligence({ isDemoMode }: { isDemoMode?: boolean } = {}) {
   const [signatures, setSignatures] = useState<MalwareSignature[]>([]);
   const [ipReputations, setIPReputations] = useState<IPReputation[]>([]);
   const [detectionRules, setDetectionRules] = useState<DetectionRule[]>([]);
@@ -96,6 +96,7 @@ export function useThreatIntelligence() {
   const [checking, setChecking] = useState(false);
 
   const loadData = useCallback(async () => {
+    if (isDemoMode) return;
     setLoading(true);
     try {
       const [signaturesRes, ipRes, rulesRes, feedsRes, incidentsRes] = await Promise.all([
@@ -117,11 +118,22 @@ export function useThreatIntelligence() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isDemoMode]);
 
   useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoMalwareSignatures, demoIPReputations, demoDetectionRules, demoThreatFeeds, demoIncidentLogs }) => {
+        setSignatures(demoMalwareSignatures as unknown as MalwareSignature[]);
+        setIPReputations(demoIPReputations as unknown as IPReputation[]);
+        setDetectionRules(demoDetectionRules as unknown as DetectionRule[]);
+        setThreatFeeds(demoThreatFeeds as unknown as ThreatFeed[]);
+        setIncidentLogs(demoIncidentLogs as unknown as IncidentLog[]);
+        setLoading(false);
+      });
+      return;
+    }
     loadData();
-  }, [loadData]);
+  }, [isDemoMode, loadData]);
 
   const checkIPReputation = useCallback(async (ipAddress: string) => {
     setChecking(true);
