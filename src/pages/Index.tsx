@@ -37,6 +37,7 @@ import { useIDSDataStore } from "@/hooks/useIDSDataStore";
 import { useAuth } from "@/hooks/useAuth";
 import { MLModel } from "@/hooks/useMLPipeline";
 import logo from "@/assets/logo.png";
+import { supabase } from "@/integrations/supabase/client";
 
 const NetworkRiskCard = () => {
   const [risk, setRisk] = useState(0);
