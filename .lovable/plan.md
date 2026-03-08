@@ -1,62 +1,49 @@
 
 
-# Move ML Training to Web Worker
+# Final Architecture — Sidebar Navigation Reorganization
 
 ## Problem
-ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-## Solution
-Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
+The dashboard has 23 tabs in a flat horizontal scroll bar. The user's architecture diagram defines clear **layered groupings**. The system needs to be reorganized with a sidebar navigation matching these layers.
 
-```text
-UI Thread                    Web Worker
-   │                            │
-   ├─ postMessage({algorithm}) ──►
-   │                            ├─ generateSyntheticData()
-   │  ◄── progress(30%) ───────┤
-   │                            ├─ preprocessData()
-   │  ◄── progress(60%) ───────┤
-   │                            ├─ trainModel()
-   │  ◄── progress(90%) ───────┤
-   │                            ├─ calculateMetrics()
-   │  ◄── result({metrics}) ───┤
-   │                            │
-   ▼ Update UI + save to DB     ▼
-```
+## Plan
 
-## Files to Create
+### 1. Replace Tab Bar with Sidebar Navigation
 
-### 1. `src/workers/mlTraining.worker.ts`
-A self-contained Web Worker that:
-- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
-- Contains data generation, normalization, SMOTE, feature extraction logic
-- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
-- Listens for `{ type: 'train', algorithm }` messages
-- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
+Convert `Index.tsx` from horizontal `Tabs` to a **collapsible sidebar** layout using the existing `src/components/ui/sidebar.tsx` and `react-resizable-panels`. Group pages by architecture layer:
 
-**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
+| Group | Pages |
+|-------|-------|
+| **Overview** | Overview |
+| **Detection** | Monitor, Detection Rules, Engine, Malware Sigs, Malware Behavior |
+| **Intelligence** | Threat Intel, Correlation, Hunt, Risk Scores, Timeline |
+| **Response** | Incidents, Alerts, Notifications |
+| **Data** | Events, Datasets, Assets, Topology, Retention |
+| **ML** | ML Models, Inference, Adaptive, ML Metrics |
+| **Map** | Map |
 
-### 2. `src/hooks/useMLWorker.ts`
-A hook that:
-- Creates/manages the Worker instance
-- Exposes `trainInWorker(algorithm)` returning a Promise
-- Forwards progress updates to a callback
-- Handles cleanup on unmount
+### 2. Sidebar Component
 
-## Files to Modify
+Create `src/components/DashboardSidebar.tsx`:
+- Collapsible groups with icons matching each architecture layer
+- Active page highlight
+- Mobile-responsive (sheet/drawer on small screens)
+- Keep the same component rendering logic, just change navigation
 
-### 3. `src/components/MLModelManager.tsx`
-- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
-- `trainNewModel` sends work to the worker, receives metrics back
-- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
-- Progress bar driven by worker progress messages
+### 3. Modify `src/pages/Index.tsx`
 
-### 4. `src/hooks/useMLPipeline.ts`
-- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
-- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
+- Replace `TabsList` + `TabsTrigger` with sidebar
+- Keep all `TabsContent` blocks (or switch to conditional rendering based on `activeTab` state)
+- Preserve the header, demo toggle, and all existing components
 
-## Technical Notes
-- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
-- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
-- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
+### 4. No Database Changes
+
+All modules already exist and work. This is purely a navigation/layout restructure.
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Create** | `src/components/DashboardSidebar.tsx` — grouped sidebar navigation |
+| **Modify** | `src/pages/Index.tsx` — replace tab bar with sidebar layout |
 
