@@ -1,75 +1,76 @@
 
 
-# Pipeline Verification: Regex Detection, ML Models, and Correlation Engine
+# Integrate All 5 Modules Into the IDS Agent Pipeline
 
-## Summary of Findings
+## Current State
 
-After inspecting the codebase, here is the status of each module and what needs to be fixed or connected.
+| Module | Python File | Integrated in ids_agent.py? |
+|--------|------------|---------------------------|
+| Threat Intel Enricher | **MISSING** | No |
+| Response Manager | `docs/response_manager.py` | No |
+| Risk Scoring Engine | `docs/risk_scoring_engine.py` | No |
+| Asset Discovery | **MISSING** | No |
+| Notification Dispatcher | `docs/notification_dispatcher.py` | No |
 
----
+The three existing modules (`response_manager.py`, `risk_scoring_engine.py`, `notification_dispatcher.py`) are standalone scripts that are never imported or called from `ids_agent.py`. The alert pipeline currently ends at `alert_manager.process(alerts)` → POST to Supabase. None of the downstream modules are wired in.
 
-## 1. Regex Payload Detection — FUNCTIONAL
+## Plan
 
-**Status: Fully wired in the Python agent pipeline.**
+### 1. Create `docs/threat_intel_enricher.py`
+- Class `ThreatIntelEnricher` that takes alerts and enriches them by calling the existing `enrich-alert` edge function (which already calls `check-ip-reputation`)
+- For each alert's `source_ip` and `destination_ip`, fetch reputation data
+- Attach enrichment to alert metadata before it's sent to the database
+- Cache results to avoid redundant lookups (TTL-based)
 
-- `ids_agent.py` lines 130-171: `evaluate_regex_rules()` checks `payload_preview` against active regex patterns fetched from the `detection_rules` table via `rule_fetcher.py`.
-- Matched rules generate alerts with `detection_module: "regex_engine"` and a `dedupe_key`, which are sent through `AlertManager` to the `ingest-traffic` edge function.
-- The edge function (`ingest-traffic/index.ts`) inserts these alerts into `live_alerts` with dedup checking.
-- `payload_preview` is extracted from raw packets in `packet_callback()` (line 194) using scapy's `Raw` layer.
+### 2. Create `docs/asset_discovery.py`
+- Class `AssetDiscovery` that tracks unique IPs seen in network traffic
+- On each packet, check if IP exists in local cache; if new, upsert to `asset_inventory` table via REST API
+- Track `first_seen`, `last_seen`, `connection_count`, open ports, protocols
+- Periodic sync to update `last_seen` for known assets
 
-**Verdict: No changes needed.** Regex detection works end-to-end when the Python agent is running. The only prerequisite is that `detection_rules` rows with `rule_type = 'regex'` exist in the database.
+### 3. Integrate all modules into `docs/ids_agent.py`
+Update the main agent loop to follow this pipeline:
 
----
-
-## 2. ML Models — PARTIALLY CONNECTED
-
-**Status: Feature extraction is real, but inference uses in-memory client-side models only.**
-
-- `useNetworkFeatureExtractor.ts` extracts real ML features (sliding window aggregates, flag derivation, port-to-service mapping) from `NetworkEvent` objects — this is solid.
-- `RealtimeInference.tsx` runs inference on a 1-second interval against live `networkEvents` from the data store, using `useMLPipeline` for prediction.
-- `useMLPipeline` trains/predicts using `mlAlgorithms.ts` (client-side Random Forest and PCA from `ml-random-forest` and `ml-pca`).
-- Predictions are persisted to the `predictions` table in Supabase.
-
-**Gap: ML models do NOT consume flow data from `flow_metrics_log` or raw `network_traffic` DB rows directly.** They only process events already loaded into the client-side `useIDSDataStore`. In live mode (agent running), network traffic rows arrive via realtime subscription and get processed. In demo mode, synthetic events are used.
-
-**Verdict: The ML pipeline is functional but client-side only.** Models train and predict on real feature vectors extracted from network events. They are not purely visual demonstrations. However, they don't query historical `network_traffic` or `flow_metrics_log` for batch training — training data comes from the `training_data` table or client-side events.
-
-**No changes proposed** — this is working as designed for a browser-based IDS dashboard.
-
----
-
-## 3. Correlation Engine — FUNCTIONAL but needs verification of alert flow
-
-**Status: Fully wired with multi-source aggregation.**
-
-- `CorrelationEngine.tsx` uses `useCorrelationAggregator` to fetch events from **three sources in parallel**: `incident_logs`, `live_alerts`, and `predictions` (anomalies with confidence >= 0.7).
-- These aggregated events are fed into `useThreatCorrelation` which groups by source IP, maps attack types to kill chain phases, detects multi-stage sequences, and calculates composite scores.
-- Real-time subscriptions on `incident_logs` (INSERT) and `live_alerts` (INSERT) feed new events into the correlation engine as they arrive.
-- High-scoring groups (>= 60) are persisted to `correlation_groups` and `correlation_events` tables.
-- Escalation creates new `incident_logs` entries typed as `multi_stage_attack`.
-
-**The full flow:**
 ```text
-Python Agent → ingest-traffic edge fn → live_alerts table
-                                           ↓ (realtime subscription)
-                                    CorrelationEngine
-                                           ↓
-                                    correlation_groups (persisted)
-                                           ↓ (escalate)
-                                    incident_logs (multi_stage_attack)
+packets → detectors → alerts
+                        ↓
+              threat_intel_enricher (enrich alerts)
+                        ↓
+              alert_manager.process() (dedup + send to DB)
+                        ↓
+              asset_discovery.update() (track IPs from packets)
+                        ↓
+              risk_scoring (periodic, every 5 min)
+                        ↓
+              response_manager.auto_respond() (for high-score incidents)
+                        ↓
+              notification_dispatcher.dispatch() (for critical alerts)
 ```
 
-**Verdict: Alerts do feed into correlation.** The pipeline is complete. When the Python agent sends alerts, they land in `live_alerts`, which triggers the realtime subscription in `CorrelationEngine`, which processes them through the correlation logic.
+Changes to `ids_agent.py`:
+- Import `ThreatIntelEnricher`, `ResponseManager`, `NotificationDispatcher`, `AssetDiscovery`
+- Instantiate each module with Supabase credentials
+- Before `alert_manager.process()`, run alerts through `threat_intel_enricher.enrich()`
+- After sending packets, call `asset_discovery.update(packets)`
+- Add periodic risk scoring call (every 300s)
+- After alert_manager processes alerts, pass high-severity alerts to `response_manager.auto_respond()` and `notification_dispatcher.dispatch()`
 
----
+### 4. No frontend changes needed
+All frontend pages already exist and display the relevant data:
+- **Threat Intel page**: reads from `ip_reputation` table
+- **Incidents page**: reads from `incident_logs` and `response_actions`
+- **Assets page**: reads from `asset_inventory`
+- **Notifications page**: reads from `notification_configs`
+- **Risk Score dashboard**: reads from `host_risk_scores`
 
-## Overall Assessment
+The backend modules populate these tables; the frontend already renders them.
 
-| Module | Status | Action Needed |
-|--------|--------|---------------|
-| Regex Payload Detection | Fully functional | None — works when agent runs |
-| ML Models | Functional (client-side) | None — extracts real features, trains real models |
-| Correlation Engine | Fully functional | None — aggregates all three data sources |
+## Files to Create/Modify
 
-**All three modules are wired into the pipeline and operational.** No code changes are required. The system works end-to-end when the Python IDS agent (`ids_agent.py`) is running and sending data to the `ingest-traffic` edge function.
+| File | Action |
+|------|--------|
+| `docs/threat_intel_enricher.py` | Create |
+| `docs/asset_discovery.py` | Create |
+| `docs/ids_agent.py` | Modify — import and wire all 5 modules |
+| `docs/alert_manager.py` | No changes needed |
 
