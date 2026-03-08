@@ -1,13 +1,1 @@
 project_id = "saeofugyscjfgqqnqowk"
-
-[functions.ingest-traffic]
-verify_jwt = false
-
-[functions.check-ip-reputation]
-verify_jwt = false
-
-[functions.scan-file-hash]
-verify_jwt = false
-
-[functions.send-alert-notification]
-verify_jwt = false
