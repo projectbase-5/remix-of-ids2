@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, TrendingUp, Wifi, Smartphone, Server, Cloud, Settings } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Wifi, Smartphone, Server, Cloud, Settings, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useModelUpdatePipeline } from '@/hooks/useModelUpdatePipeline';
 
 interface AdaptiveConfig {
   id?: string;
