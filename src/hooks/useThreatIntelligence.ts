@@ -132,7 +132,8 @@ export function useThreatIntelligence() {
 
       if (error) throw error;
 
-      toast.success(`IP ${ipAddress} checked - Score: ${data.reputation_score}/100`);
+      const sourceLabel = data.source === 'abuseipdb' ? ' (AbuseIPDB)' : data.source === 'heuristic' ? ' (Heuristic)' : '';
+      toast.success(`IP ${ipAddress} checked - Score: ${data.reputation_score}/100${sourceLabel}`);
       await loadData();
       return data;
     } catch (error) {
@@ -143,6 +144,26 @@ export function useThreatIntelligence() {
       setChecking(false);
     }
   }, [loadData]);
+
+  const enrichAlert = useCallback(async (sourceIp: string, destinationIp?: string) => {
+    setChecking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('enrich-alert', {
+        body: { source_ip: sourceIp, destination_ip: destinationIp }
+      });
+
+      if (error) throw error;
+
+      toast.success('Alert enriched with threat intelligence');
+      return data;
+    } catch (error) {
+      console.error('Error enriching alert:', error);
+      toast.error('Failed to enrich alert');
+      return null;
+    } finally {
+      setChecking(false);
+    }
+  }, []);
 
   const scanFileHash = useCallback(async (hash: string) => {
     setChecking(true);
