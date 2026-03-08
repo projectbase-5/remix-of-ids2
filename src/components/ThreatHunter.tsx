@@ -61,7 +61,7 @@ const ThreatHunter = () => {
   // Load advanced hunt results
   const fetchAdvancedResults = useCallback(async () => {
     const { data } = await supabase.from('hunt_results').select('*').order('created_at', { ascending: false }).limit(200);
-    if (data) setAdvancedResults(data);
+    if (data) setAdvancedResults(data.map(d => ({ ...d, details: (typeof d.details === 'object' && d.details !== null ? d.details : {}) as Record<string, any> })));
   }, []);
 
   useEffect(() => { fetchAdvancedResults(); }, [fetchAdvancedResults]);

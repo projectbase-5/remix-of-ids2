@@ -273,6 +273,10 @@ const Index = () => {
           <TabsContent value="retention">
             <DataRetention />
           </TabsContent>
+
+          <TabsContent value="risk">
+            <RiskScoreDashboard />
+          </TabsContent>
         </Tabs>
       </main>
     </div>;
