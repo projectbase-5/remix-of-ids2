@@ -144,64 +144,95 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
                   No alerts match your criteria
                 </div>
               ) : (
-                filteredAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between space-x-4">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <Badge className={getSeverityColor(alert.severity)}>
-                            {alert.severity.toUpperCase()}
-                          </Badge>
-                          <Badge variant="outline">{alert.type}</Badge>
-                          <Badge className={getStatusColor(alert.status)}>
-                            {alert.status}
-                          </Badge>
+                filteredAlerts.map((alert) => {
+                  const metadata = (alert as unknown as { metadata?: AlertMetadata }).metadata;
+                  const srcRep = metadata?.source_reputation;
+                  const summary = metadata?.summary;
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between space-x-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center space-x-2 flex-wrap gap-1">
+                            <Badge className={getSeverityColor(alert.severity)}>
+                              {alert.severity.toUpperCase()}
+                            </Badge>
+                            <Badge variant="outline">{alert.type}</Badge>
+                            <Badge className={getStatusColor(alert.status)}>
+                              {alert.status}
+                            </Badge>
+                            {/* Enrichment badges */}
+                            {srcRep && (
+                              <Badge className={getReputationBadge(srcRep.reputation_score).color}>
+                                <Globe className="h-3 w-3 mr-1" />
+                                {srcRep.reputation_score}/100
+                              </Badge>
+                            )}
+                            {summary?.source_malicious && (
+                              <Badge variant="destructive">⚠️ Malicious Source</Badge>
+                            )}
+                          </div>
+                          
+                          <h4 className="font-semibold">{alert.description}</h4>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
+                            <div className="flex items-center space-x-1">
+                              <Clock className="h-3 w-3" />
+                              <span>{new Date(alert.timestamp).toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <MapPin className="h-3 w-3" />
+                              <span>From: {alert.sourceIP}</span>
+                              {srcRep?.country_code && (
+                                <Badge variant="outline" className="text-xs ml-1">{srcRep.country_code}</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              <Shield className="h-3 w-3" />
+                              <span>Target: {alert.targetIP}</span>
+                            </div>
+                          </div>
+
+                          {/* Threat types from enrichment */}
+                          {srcRep?.threat_types && srcRep.threat_types.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {srcRep.threat_types.map((type, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">{type}</Badge>
+                              ))}
+                              <Badge variant="outline" className="text-xs">
+                                {srcRep.source === 'abuseipdb' ? '🔴 AbuseIPDB' : '⚙️ Heuristic'}
+                              </Badge>
+                            </div>
+                          )}
                         </div>
                         
-                        <h4 className="font-semibold">{alert.description}</h4>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm text-muted-foreground">
-                          <div className="flex items-center space-x-1">
-                            <Clock className="h-3 w-3" />
-                            <span>{new Date(alert.timestamp).toLocaleString()}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <MapPin className="h-3 w-3" />
-                            <span>From: {alert.sourceIP}</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Shield className="h-3 w-3" />
-                            <span>Target: {alert.targetIP}</span>
-                          </div>
+                        <div className="flex space-x-2">
+                          {alert.status === "active" && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleInvestigate(alert.id)}
+                            >
+                              Investigate
+                            </Button>
+                          )}
+                          {alert.status !== "resolved" && (
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleResolve(alert.id)}
+                            >
+                              Resolve
+                            </Button>
+                          )}
                         </div>
-                      </div>
-                      
-                      <div className="flex space-x-2">
-                        {alert.status === "active" && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleInvestigate(alert.id)}
-                          >
-                            Investigate
-                          </Button>
-                        )}
-                        {alert.status !== "resolved" && (
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleResolve(alert.id)}
-                          >
-                            Resolve
-                          </Button>
-                        )}
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </ScrollArea>
