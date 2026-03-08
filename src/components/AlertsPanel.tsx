@@ -1,11 +1,12 @@
-import { useState, memo } from "react";
+import { useState, useEffect, memo, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Search, Clock, MapPin, Shield, Globe } from "lucide-react";
+import { AlertTriangle, Search, Clock, MapPin, Shield, Globe, Monitor } from "lucide-react";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AlertsPanelProps {
   dataStore: ReturnType<typeof useIDSDataStore>;
