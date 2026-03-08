@@ -526,7 +526,7 @@ def main():
     print(f"  Flow fanout   : >{flow_aggregator.fanout_threshold} destinations")
     print(f"  Malware C2    : >{malware_detector.beacon_min_connections} conns")
     print(f"  Response      : dry_run={response_manager.dry_run}")
-    print("  Modules       : Enricher ✓ | Assets ✓ | Risk ✓ | Response ✓ | Notify ✓")
+    print("  Modules       : Enricher ✓ | Assets ✓ | Risk ✓ | Response ✓ | Notify ✓ | Suppress ✓")
     print("=" * 60)
 
     # Initial rule fetch
