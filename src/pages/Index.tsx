@@ -26,6 +26,7 @@ import CorrelationEngine from "@/components/CorrelationEngine";
 import MLMetricsDashboard from "@/components/MLMetricsDashboard";
 import ThreatHunter from "@/components/ThreatHunter";
 import MalwareBehaviorDashboard from "@/components/MalwareBehaviorDashboard";
+import AssetInventory from "@/components/AssetInventory";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
