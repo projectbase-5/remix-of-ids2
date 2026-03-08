@@ -1,15 +1,34 @@
-
 import { useState, memo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Search, Clock, MapPin, Shield } from "lucide-react";
+import { AlertTriangle, Search, Clock, MapPin, Shield, Globe } from "lucide-react";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
 
 interface AlertsPanelProps {
   dataStore: ReturnType<typeof useIDSDataStore>;
+}
+
+interface AlertMetadata {
+  source_reputation?: {
+    reputation_score: number;
+    is_malicious: boolean;
+    country_code: string | null;
+    threat_types: string[];
+    source: string;
+  };
+  destination_reputation?: {
+    reputation_score: number;
+    is_malicious: boolean;
+  };
+  summary?: {
+    source_malicious: boolean;
+    destination_malicious: boolean;
+    max_threat_score: number;
+    enriched_at: string;
+  };
 }
 
 const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
@@ -32,6 +51,13 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
       case "resolved": return "bg-green-500 text-green-50";
       default: return "bg-muted text-muted-foreground";
     }
+  };
+
+  const getReputationBadge = (score: number) => {
+    if (score >= 80) return { color: "bg-red-600 text-white", label: "High Risk" };
+    if (score >= 50) return { color: "bg-orange-500 text-white", label: "Suspicious" };
+    if (score >= 25) return { color: "bg-yellow-500 text-yellow-50", label: "Low Risk" };
+    return { color: "bg-green-500 text-green-50", label: "Clean" };
   };
 
   const filteredAlerts = dataStore.alerts.filter(alert => {
