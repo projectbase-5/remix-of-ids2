@@ -31,6 +31,7 @@ import AssetInventory from "@/components/AssetInventory";
 import NetworkTopology from "@/components/NetworkTopology";
 import DataRetention from "@/components/DataRetention";
 import RiskScoreDashboard from "@/components/RiskScoreDashboard";
+import AttackTimeline from "@/components/AttackTimeline";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
