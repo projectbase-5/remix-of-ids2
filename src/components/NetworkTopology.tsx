@@ -35,7 +35,7 @@ interface GraphNode {
   asset?: AssetInfo;
 }
 
-const NetworkTopology = () => {
+const NetworkTopology = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [edges, setEdges] = useState<TopologyEdge[]>([]);
   const [assets, setAssets] = useState<Record<string, AssetInfo>>({});
   const [loading, setLoading] = useState(false);
@@ -45,6 +45,7 @@ const NetworkTopology = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const fetchData = useCallback(async () => {
+    if (isDemoMode) return;
     setLoading(true);
     try {
       const [edgeRes, assetRes] = await Promise.all([
@@ -63,9 +64,20 @@ const NetworkTopology = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isDemoMode]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoTopologyEdges, demoAssets }) => {
+        setEdges(demoTopologyEdges as TopologyEdge[]);
+        const map: Record<string, AssetInfo> = {};
+        demoAssets.forEach((a) => (map[a.ip_address] = { ip_address: a.ip_address, hostname: a.hostname, device_type: a.device_type, criticality: a.criticality }));
+        setAssets(map);
+      });
+      return;
+    }
+    fetchData();
+  }, [isDemoMode, fetchData]);
 
   // Build nodes from edges
   const nodes: GraphNode[] = (() => {

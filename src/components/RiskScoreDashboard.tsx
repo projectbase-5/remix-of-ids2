@@ -24,12 +24,13 @@ interface HostRiskScore {
 const SEVERITY_WEIGHTS: Record<string, number> = { critical: 40, high: 25, medium: 10, low: 3 };
 const CRITICALITY_MULT: Record<string, number> = { critical: 2.0, high: 1.5, medium: 1.0, low: 0.5 };
 
-const RiskScoreDashboard = () => {
+const RiskScoreDashboard = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [scores, setScores] = useState<HostRiskScore[]>([]);
   const [networkRisk, setNetworkRisk] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const fetchScores = useCallback(async () => {
+    if (isDemoMode) return;
     const { data } = await supabase
       .from('host_risk_scores')
       .select('*')
@@ -43,9 +44,20 @@ const RiskScoreDashboard = () => {
         setNetworkRisk(Math.round(totalW / Math.max(weight, 1)));
       }
     }
-  }, []);
+  }, [isDemoMode]);
 
-  useEffect(() => { fetchScores(); }, [fetchScores]);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoRiskScores }) => {
+        setScores(demoRiskScores as HostRiskScore[]);
+        const totalW = demoRiskScores.reduce((s, h) => s + h.total_risk * h.asset_multiplier, 0);
+        const weight = demoRiskScores.reduce((s, h) => s + h.asset_multiplier, 0);
+        setNetworkRisk(Math.round(totalW / Math.max(weight, 1)));
+      });
+      return;
+    }
+    fetchScores();
+  }, [isDemoMode, fetchScores]);
 
   const recalculate = useCallback(async () => {
     setLoading(true);

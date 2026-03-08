@@ -21,7 +21,7 @@ interface NotificationConfig {
   created_at: string;
 }
 
-const AlertNotifications = () => {
+const AlertNotifications = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [configs, setConfigs] = useState<NotificationConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [newType, setNewType] = useState<string>('email');
@@ -30,12 +30,22 @@ const AlertNotifications = () => {
   const [testing, setTesting] = useState<string | null>(null);
 
   const fetchConfigs = async () => {
+    if (isDemoMode) return;
     const { data } = await supabase.from('notification_configs').select('*').order('created_at', { ascending: false });
     setConfigs((data as unknown as NotificationConfig[]) || []);
     setLoading(false);
   };
 
-  useEffect(() => { fetchConfigs(); }, []);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoNotificationConfigs }) => {
+        setConfigs(demoNotificationConfigs as unknown as NotificationConfig[]);
+        setLoading(false);
+      });
+      return;
+    }
+    fetchConfigs();
+  }, [isDemoMode]);
 
   const handleRealtime = useCallback(() => { fetchConfigs(); }, []);
   useRealtimeSubscription('notification_configs', ['INSERT', 'UPDATE', 'DELETE'], handleRealtime);

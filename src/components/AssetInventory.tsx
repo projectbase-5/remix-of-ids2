@@ -64,7 +64,7 @@ const isStale = (lastSeen: string) => {
   return diff > 24 * 60 * 60 * 1000; // 24h
 };
 
-const AssetInventory = () => {
+const AssetInventory = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -80,6 +80,7 @@ const AssetInventory = () => {
   });
 
   const fetchAssets = async () => {
+    if (isDemoMode) return;
     const { data, error } = await supabase
       .from("asset_inventory")
       .select("*")
@@ -96,10 +97,20 @@ const AssetInventory = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchAssets(); }, []);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoAssets }) => {
+        setAssets(demoAssets as Asset[]);
+        setLoading(false);
+      });
+      return;
+    }
+    fetchAssets();
+  }, [isDemoMode]);
 
   // Realtime subscription
   useEffect(() => {
+    if (isDemoMode) return;
     const channel = supabase
       .channel("asset_inventory_changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "asset_inventory" }, () => {
@@ -107,7 +118,7 @@ const AssetInventory = () => {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [isDemoMode]);
 
   const filtered = useMemo(() => {
     return assets.filter(a => {

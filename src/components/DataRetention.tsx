@@ -34,7 +34,7 @@ const MANAGED_TABLES = [
   "correlation_events",
 ];
 
-const DataRetention = () => {
+const DataRetention = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
   const [loading, setLoading] = useState(false);
   const [cleaning, setCleaning] = useState(false);
@@ -44,6 +44,7 @@ const DataRetention = () => {
   const [newArchive, setNewArchive] = useState(false);
 
   const fetchPolicies = useCallback(async () => {
+    if (isDemoMode) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("retention_policies")
@@ -52,9 +53,17 @@ const DataRetention = () => {
     if (data) setPolicies(data as RetentionPolicy[]);
     if (error) toast.error("Failed to load retention policies");
     setLoading(false);
-  }, []);
+  }, [isDemoMode]);
 
-  useEffect(() => { fetchPolicies(); }, [fetchPolicies]);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoRetentionPolicies }) => {
+        setPolicies(demoRetentionPolicies as RetentionPolicy[]);
+      });
+      return;
+    }
+    fetchPolicies();
+  }, [isDemoMode, fetchPolicies]);
 
   const addPolicy = async () => {
     if (!newTable) return;
