@@ -1,104 +1,62 @@
 
 
-# Incident Scoring Engine — Implementation Plan
+# Move ML Training to Web Worker
 
-## Current State
+## Problem
+ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-| Component | What Exists | Gap |
-|-----------|-------------|-----|
-| **Alert processing** | `ingest-traffic` inserts individual alerts into `live_alerts` | No aggregation into prioritized incidents |
-| **Correlation** | `useThreatCorrelation` groups by IP + detects kill chain sequences | Only runs in-browser, not server-side |
-| **Incident creation** | `useIntegratedDetection` creates incidents for high-score events | Per-event, not aggregated |
-| **Scoring** | `calculateCompositeScore()` in correlation hook | Not applied to incident prioritization queue |
-
-**Result**: Alerts appear individually in the panel. No unified incident with "port scan + beacon + DNS anomaly = critical incident".
-
----
-
-## Plan
-
-### 1. Server-Side Incident Scoring Edge Function
-
-Create `supabase/functions/score-incidents/index.ts`:
-
-- Called periodically or on-demand
-- Aggregates recent `live_alerts` by `source_ip` within a time window
-- Applies scoring formula:
-  ```
-  score = Σ(severity_weight × recency_factor) × attack_diversity_bonus × sequence_bonus
-  ```
-- Creates or updates rows in a new `scored_incidents` table
-- Marks alerts as "aggregated" to avoid double-counting
-
-### 2. New Database Table: `scored_incidents`
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | uuid | Primary key |
-| `source_ip` | text | Aggregation key |
-| `total_score` | integer | Computed priority score |
-| `alert_count` | integer | Number of aggregated alerts |
-| `attack_types` | jsonb | Unique attack types detected |
-| `severity` | text | Derived from score: critical/high/medium/low |
-| `first_alert_at` | timestamptz | Earliest alert timestamp |
-| `last_alert_at` | timestamptz | Most recent alert |
-| `status` | text | open/investigating/resolved |
-| `alert_ids` | jsonb | Array of linked alert UUIDs |
-| `created_at` / `updated_at` | timestamptz | Audit timestamps |
-
-### 3. Python Agent: `incident_scoring_engine.py`
-
-Create `docs/incident_scoring_engine.py`:
-
-- Local scoring logic for near-real-time prioritization
-- Same formula as edge function (consistency)
-- Pushes aggregated incidents to `ingest-traffic` as `{ incidents: [...] }`
-- Keeps a sliding window cache of recent alerts per source IP
-
-### 4. Modify `ingest-traffic` Edge Function
-
-- Accept optional `incidents[]` payload alongside `alerts[]`
-- Insert/upsert into `scored_incidents` table
-- Return `incidents_inserted` count
-
-### 5. UI: Incident Priority Queue
-
-Modify `src/components/IncidentResponse.tsx`:
-
-- Add "Priority Queue" tab showing `scored_incidents` sorted by `total_score` desc
-- Each row shows: score badge, IP, attack type tags, alert count, time window
-- Click to expand linked alerts
-- One-click "Investigate" promotes to full incident workflow
-
-### 6. Scoring Formula (Technical Detail)
+## Solution
+Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
 
 ```text
-SEVERITY_WEIGHTS = { critical: 25, high: 15, medium: 8, low: 3 }
-
-For each source_ip in window:
-  base = Σ SEVERITY_WEIGHTS[alert.severity]
-  diversity = unique_attack_types.length × 10
-  sequence = has_kill_chain_sequence ? 30 : 0
-  recency = alerts_in_last_5_min × 1.5 + alerts_in_last_15_min × 1.0
-  
-  total_score = base + diversity + sequence + recency
-
-Severity mapping:
-  critical: score ≥ 100
-  high: score ≥ 60
-  medium: score ≥ 30
-  low: score < 30
+UI Thread                    Web Worker
+   │                            │
+   ├─ postMessage({algorithm}) ──►
+   │                            ├─ generateSyntheticData()
+   │  ◄── progress(30%) ───────┤
+   │                            ├─ preprocessData()
+   │  ◄── progress(60%) ───────┤
+   │                            ├─ trainModel()
+   │  ◄── progress(90%) ───────┤
+   │                            ├─ calculateMetrics()
+   │  ◄── result({metrics}) ───┤
+   │                            │
+   ▼ Update UI + save to DB     ▼
 ```
 
----
+## Files to Create
 
-## Files Summary
+### 1. `src/workers/mlTraining.worker.ts`
+A self-contained Web Worker that:
+- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
+- Contains data generation, normalization, SMOTE, feature extraction logic
+- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
+- Listens for `{ type: 'train', algorithm }` messages
+- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
 
-| Action | File |
-|--------|------|
-| **Create** | `supabase/functions/score-incidents/index.ts` — aggregation + scoring |
-| **Create** | `docs/incident_scoring_engine.py` — agent-side scoring |
-| **Modify** | `supabase/functions/ingest-traffic/index.ts` — accept incidents payload |
-| **Modify** | `src/components/IncidentResponse.tsx` — Priority Queue tab |
-| **Migration** | Create `scored_incidents` table with RLS policies |
+**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
+
+### 2. `src/hooks/useMLWorker.ts`
+A hook that:
+- Creates/manages the Worker instance
+- Exposes `trainInWorker(algorithm)` returning a Promise
+- Forwards progress updates to a callback
+- Handles cleanup on unmount
+
+## Files to Modify
+
+### 3. `src/components/MLModelManager.tsx`
+- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
+- `trainNewModel` sends work to the worker, receives metrics back
+- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
+- Progress bar driven by worker progress messages
+
+### 4. `src/hooks/useMLPipeline.ts`
+- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
+- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
+
+## Technical Notes
+- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
+- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
+- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
 
