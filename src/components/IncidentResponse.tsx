@@ -256,6 +256,10 @@ export default function IncidentResponse() {
     loadScoredIncidents();
   }, [loadScoredIncidents]));
 
+  useRealtimeSubscription('response_actions', ['INSERT', 'UPDATE'], useCallback(() => {
+    loadResponseActions();
+  }, [loadResponseActions]));
+
   const calculateImpactScore = (severity: string): number => {
     switch (severity.toLowerCase()) {
       case 'critical': return 95;
