@@ -150,6 +150,7 @@ const Index = () => {
               <TabsTrigger value="topology">Topology</TabsTrigger>
               <TabsTrigger value="retention">Retention</TabsTrigger>
               <TabsTrigger value="risk">Risk Scores</TabsTrigger>
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
             </TabsList>
           </div>
 
