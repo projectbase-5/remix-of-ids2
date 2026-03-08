@@ -63,6 +63,7 @@ from asset_discovery import AssetDiscovery
 from response_manager import ResponseManager
 from notification_dispatcher import NotificationDispatcher, NotificationPayload
 from risk_scoring_engine import compute_host_risk_scores, compute_network_risk, push_risk_scores
+from alert_suppression_engine import AlertSuppressionEngine
 
 logger = logging.getLogger("ids_agent")
 
@@ -104,6 +105,7 @@ threat_enricher = None
 asset_discovery = None
 response_manager = None
 notification_dispatcher = None
+suppression_engine = None
 
 # State
 last_rule_refresh = 0.0
@@ -382,6 +384,15 @@ def send_batch():
             logger.error(f"Threat enrichment failed: {e}")
 
     # ---------------------------------------------------------------
+    # 2b. Suppress noise (trusted IPs, severity filter, rate limit)
+    # ---------------------------------------------------------------
+    if suppression_engine and all_alerts:
+        try:
+            all_alerts = suppression_engine.evaluate(all_alerts)
+        except Exception as e:
+            logger.error(f"Alert suppression failed: {e}")
+
+    # ---------------------------------------------------------------
     # 3. Deduplicate and send alerts to DB
     # ---------------------------------------------------------------
     sent_count = 0
@@ -451,7 +462,7 @@ def send_batch():
 def main():
     """Entry point — validate config, initialise all modules, start sniffer, loop."""
     global alert_manager, rule_fetcher, threat_enricher, asset_discovery
-    global response_manager, notification_dispatcher
+    global response_manager, notification_dispatcher, suppression_engine
     global last_rule_refresh, last_risk_scoring
 
     if AGENT_API_KEY == "REPLACE_WITH_YOUR_SECRET_KEY":
@@ -496,6 +507,12 @@ def main():
         dedupe_window=60,
     )
 
+    suppression_engine = AlertSuppressionEngine(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        rule_refresh_interval=60,
+    )
+
     print("=" * 60)
     print("  IDS Real-Time Agent v3 — Full Pipeline")
     print("  Detection → Enrichment → Response → Notification")
@@ -509,7 +526,7 @@ def main():
     print(f"  Flow fanout   : >{flow_aggregator.fanout_threshold} destinations")
     print(f"  Malware C2    : >{malware_detector.beacon_min_connections} conns")
     print(f"  Response      : dry_run={response_manager.dry_run}")
-    print("  Modules       : Enricher ✓ | Assets ✓ | Risk ✓ | Response ✓ | Notify ✓")
+    print("  Modules       : Enricher ✓ | Assets ✓ | Risk ✓ | Response ✓ | Notify ✓ | Suppress ✓")
     print("=" * 60)
 
     # Initial rule fetch
