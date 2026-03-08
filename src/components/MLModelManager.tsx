@@ -67,19 +67,29 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
     }
   };
 
+  const fetchLiveDataCount = async () => {
+    try {
+      const { count } = await supabase
+        .from('training_data')
+        .select('*', { count: 'exact', head: true });
+      setLiveDataCount(count || 0);
+    } catch (e) {
+      console.error('Error fetching live data count:', e);
+    }
+  };
 
   // Sync worker progress to local state
   useEffect(() => {
-    if (workerIsTraining) {
-      setTrainingProgress(workerProgress.value);
+    if (workerIsTraining || isRetraining) {
+      setTrainingProgress(workerIsTraining ? workerProgress.value : retrainProgress.value);
     }
-  }, [workerProgress, workerIsTraining]);
+  }, [workerProgress, workerIsTraining, isRetraining, retrainProgress]);
 
   const trainNewModel = async (algorithm: 'RandomForest' | 'C4.5' | 'GBDT' | 'DT_SVM_Hybrid' = 'RandomForest') => {
     try {
       setTrainingProgress(5);
       
-      // Run all heavy work in the Web Worker
+      // Run all heavy work in the Web Worker (synthetic data)
       const result = await trainInWorker(algorithm);
       
       // Save to database on main thread (needs Supabase client)
@@ -88,7 +98,7 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
       setTrainingProgress(100);
       
       toast({
-        title: "Model Trained Successfully",
+        title: "Model Trained (Synthetic)",
         description: `${algorithm} model trained with ${(result.metrics.accuracy * 100).toFixed(2)}% accuracy`,
       });
       
