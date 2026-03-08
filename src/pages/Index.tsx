@@ -27,6 +27,8 @@ import MLMetricsDashboard from "@/components/MLMetricsDashboard";
 import ThreatHunter from "@/components/ThreatHunter";
 import MalwareBehaviorDashboard from "@/components/MalwareBehaviorDashboard";
 import AssetInventory from "@/components/AssetInventory";
+import NetworkTopology from "@/components/NetworkTopology";
+import DataRetention from "@/components/DataRetention";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
