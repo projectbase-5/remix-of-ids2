@@ -462,7 +462,7 @@ def send_batch():
 def main():
     """Entry point — validate config, initialise all modules, start sniffer, loop."""
     global alert_manager, rule_fetcher, threat_enricher, asset_discovery
-    global response_manager, notification_dispatcher
+    global response_manager, notification_dispatcher, suppression_engine
     global last_rule_refresh, last_risk_scoring
 
     if AGENT_API_KEY == "REPLACE_WITH_YOUR_SECRET_KEY":
