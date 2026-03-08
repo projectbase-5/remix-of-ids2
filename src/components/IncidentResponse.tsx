@@ -568,6 +568,10 @@ export default function IncidentResponse() {
             <Shield className="h-4 w-4" />
             Incidents
           </TabsTrigger>
+          <TabsTrigger value="response-actions" className="flex items-center gap-1.5">
+            <Zap className="h-4 w-4" />
+            Response Actions
+          </TabsTrigger>
         </TabsList>
 
         {/* ============== PRIORITY QUEUE TAB ============== */}
