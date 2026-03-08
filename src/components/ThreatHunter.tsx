@@ -386,6 +386,77 @@ const ThreatHunter = ({ isDemoMode }: { isDemoMode?: boolean }) => {
               {results.length === 0 && <div className="text-center py-8 text-muted-foreground">Run a hunt query to see results</div>}
             </TabsContent>
 
+            {/* Log Search Tab */}
+            <TabsContent value="logs" className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
+                <Input placeholder="Source IP" value={logFilters.sourceIP} onChange={e => setLogFilters(f => ({ ...f, sourceIP: e.target.value }))} />
+                <Input placeholder="Dest IP" value={logFilters.destinationIP} onChange={e => setLogFilters(f => ({ ...f, destinationIP: e.target.value }))} />
+                <Select value={logFilters.protocol} onValueChange={v => setLogFilters(f => ({ ...f, protocol: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Protocol" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Protocols</SelectItem>
+                    <SelectItem value="TCP">TCP</SelectItem>
+                    <SelectItem value="UDP">UDP</SelectItem>
+                    <SelectItem value="ICMP">ICMP</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input placeholder="Port" type="number" value={logFilters.port} onChange={e => setLogFilters(f => ({ ...f, port: e.target.value }))} />
+                <Input placeholder="Payload keyword" value={logFilters.payloadKeyword} onChange={e => setLogFilters(f => ({ ...f, payloadKeyword: e.target.value }))} />
+                <Select value={logFilters.category} onValueChange={v => setLogFilters(f => ({ ...f, category: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Traffic</SelectItem>
+                    <SelectItem value="suspicious">Suspicious Only</SelectItem>
+                    <SelectItem value="dns">DNS Anomalies</SelectItem>
+                    <SelectItem value="c2">C2 Alerts</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={logFilters.timeRange} onValueChange={v => setLogFilters(f => ({ ...f, timeRange: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1h">Last Hour</SelectItem>
+                    <SelectItem value="6h">Last 6 Hours</SelectItem>
+                    <SelectItem value="24h">Last 24 Hours</SelectItem>
+                    <SelectItem value="7d">Last 7 Days</SelectItem>
+                    <SelectItem value="30d">Last 30 Days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={executeLogSearch} disabled={logLoading}>
+                {logLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <List className="h-4 w-4 mr-1" />}Search Logs
+              </Button>
+
+              {logResults.length > 0 ? (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {logResults.map(r => (
+                    <div key={r.id} className="flex items-center justify-between p-3 border rounded-lg text-sm">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Badge variant={r.table === 'live_alerts' ? 'destructive' : 'outline'} className="text-[10px] shrink-0">
+                          {r.table === 'live_alerts' ? 'ALERT' : 'TRAFFIC'}
+                        </Badge>
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs">{r.source_ip}{r.destination_ip ? ` → ${r.destination_ip}` : ''}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {r.table === 'live_alerts'
+                              ? `${r.alert_type} — ${r.description?.slice(0, 80)}`
+                              : `${r.protocol || ''} :${r.port || ''} | ${r.packet_size || 0}B${r.payload_preview ? ` | ${r.payload_preview.slice(0, 40)}` : ''}`
+                            }
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {r.severity && <Badge variant={r.severity === 'critical' ? 'destructive' : 'secondary'}>{r.severity}</Badge>}
+                        {r.is_suspicious && <Badge variant="destructive" className="text-[10px]">SUS</Badge>}
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.timestamp).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">Search network traffic and alerts by IP, protocol, port, or payload</div>
+              )}
+            </TabsContent>
+
             {/* Advanced Hunts Tab */}
             <TabsContent value="advanced" className="mt-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
