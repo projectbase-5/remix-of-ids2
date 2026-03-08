@@ -21,12 +21,14 @@ interface MLModelManagerProps {
 const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
   const mlPipeline = useMLPipeline();
   const { trainInWorker, cancelTraining, progress: workerProgress, isTraining: workerIsTraining } = useMLWorker();
+  const { retrainOnLiveData, isRetraining, retrainProgress } = useModelUpdatePipeline();
   const { toast } = useToast();
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [selectedModel, setSelectedModel] = useState<MLModel | null>(null);
   const [dbModels, setDbModels] = useState<any[]>([]);
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [selectedEvaluation, setSelectedEvaluation] = useState<any>(null);
+  const [liveDataCount, setLiveDataCount] = useState(0);
 
   useEffect(() => {
     fetchModelsFromDatabase();
