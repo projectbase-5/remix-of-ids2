@@ -41,6 +41,13 @@ import {
   ChevronRight,
   Search,
   Zap,
+  Ban,
+  Wifi,
+  WifiOff,
+  Bell,
+  Gauge,
+  Microscope,
+  History,
 } from 'lucide-react';
 import { IncidentLog } from '@/hooks/useThreatIntelligence';
 
