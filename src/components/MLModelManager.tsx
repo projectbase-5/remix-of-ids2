@@ -126,6 +126,38 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
     }
   };
 
+  const trainOnLiveData = async (algorithm: 'RandomForest' | 'C4.5' | 'GBDT' | 'DT_SVM_Hybrid' = 'RandomForest') => {
+    try {
+      setTrainingProgress(5);
+      const result = await retrainOnLiveData(algorithm);
+      setTrainingProgress(100);
+      
+      toast({
+        title: "Model Trained on Live Data",
+        description: `${algorithm} trained with ${(result.metrics.accuracy * 100).toFixed(2)}% accuracy using real data`,
+      });
+      
+      setTimeout(() => {
+        fetchModelsFromDatabase();
+        fetchEvaluations();
+        fetchLiveDataCount();
+        setTrainingProgress(0);
+      }, 1000);
+    } catch (error: any) {
+      if (error?.message === 'Training cancelled') {
+        toast({ title: "Training Cancelled", description: "Model training was cancelled" });
+      } else {
+        console.error('Error training on live data:', error);
+        toast({
+          title: "Live Training Failed",
+          description: error?.message || "An error occurred",
+          variant: "destructive",
+        });
+      }
+      setTrainingProgress(0);
+    }
+  };
+
   const loadModel = async (modelId: string) => {
     try {
       const model = await mlPipeline.loadModelFromDatabase(modelId);
