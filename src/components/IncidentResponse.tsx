@@ -971,6 +971,125 @@ export default function IncidentResponse() {
             </Card>
           </div>
         </TabsContent>
+
+        {/* ============== RESPONSE ACTIONS TAB ============== */}
+        <TabsContent value="response-actions">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Quick Actions Panel */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Quick Actions
+                </CardTitle>
+                <CardDescription>
+                  Execute response actions against a target IP
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">Target IP</label>
+                  <input
+                    id="response-target-ip"
+                    type="text"
+                    placeholder="e.g. 10.0.0.50"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  {ACTION_BUTTONS.map(({ type, label, icon: Icon, variant }) => (
+                    <Button
+                      key={type}
+                      variant={variant}
+                      className="w-full justify-start"
+                      disabled={executingAction !== null}
+                      onClick={() => {
+                        const ipInput = document.getElementById('response-target-ip') as HTMLInputElement;
+                        const ip = ipInput?.value?.trim();
+                        if (!ip) {
+                          toast.error('Enter a target IP address');
+                          return;
+                        }
+                        executeResponseAction(type, ip);
+                      }}
+                    >
+                      <Icon className="h-4 w-4 mr-2" />
+                      {executingAction === type ? 'Executing...' : label}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Audit Log */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <History className="h-5 w-5" />
+                      Response Audit Log
+                    </CardTitle>
+                    <CardDescription>
+                      All executed response actions with status and results
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={loadResponseActions}>
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px]">
+                  {responseLoading ? (
+                    <div className="text-center text-muted-foreground py-8">Loading...</div>
+                  ) : responseActions.length === 0 ? (
+                    <div className="text-center text-muted-foreground py-8">
+                      No response actions executed yet
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {responseActions.map((action: any) => (
+                        <div key={action.id} className="p-3 border rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge className={getActionStatusColor(action.status)}>
+                                {action.status}
+                              </Badge>
+                              <span className="font-medium text-sm">
+                                {action.action_type.replace(/_/g, ' ')}
+                              </span>
+                              {action.target_ip && (
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  → {action.target_ip}
+                                </span>
+                              )}
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {action.triggered_by}
+                            </Badge>
+                          </div>
+                          {action.result && (
+                            <div className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded p-2">
+                              {(action.result as any)?.message || JSON.stringify(action.result)}
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {new Date(action.created_at).toLocaleString()}
+                            {action.completed_at && (
+                              <span> • Completed: {new Date(action.completed_at).toLocaleString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
   );
