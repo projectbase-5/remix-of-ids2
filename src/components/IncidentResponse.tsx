@@ -224,10 +224,29 @@ export default function IncidentResponse() {
     }
   }, []);
 
+  const loadResponseActions = useCallback(async () => {
+    setResponseLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('response_actions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setResponseActions(data || []);
+    } catch (error) {
+      console.error('Error loading response actions:', error);
+    } finally {
+      setResponseLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadIncidents();
     loadScoredIncidents();
-  }, [loadIncidents, loadScoredIncidents]);
+    loadResponseActions();
+  }, [loadIncidents, loadScoredIncidents, loadResponseActions]);
 
   useRealtimeSubscription('incident_logs', ['INSERT', 'UPDATE'], useCallback(() => {
     loadIncidents();
