@@ -325,10 +325,11 @@ const DetectionEngine = ({ dataStore }: DetectionEngineProps) => {
       </Card>
 
       <Tabs defaultValue="rules" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="rules">Detection Rules</TabsTrigger>
           <TabsTrigger value="threats">Threat Analysis</TabsTrigger>
           <TabsTrigger value="correlator">Threat Correlator</TabsTrigger>
+          <TabsTrigger value="simulations">Simulations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="rules">
