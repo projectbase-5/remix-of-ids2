@@ -166,22 +166,26 @@ export function DashboardSidebar({ activeTab, onTabChange }: DashboardSidebarPro
             );
           }
 
-          // When collapsed, show items directly without collapsible
+          // When collapsed, show a single group-level icon
           if (collapsed) {
+            const groupActive = group.items.some((i) => i.value === activeTab);
+            const handleClick = () => {
+              if (!groupActive) {
+                onTabChange(group.items[0].value);
+              }
+            };
             return (
               <SidebarGroup key={group.label}>
                 <SidebarMenu>
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.value}>
-                      <SidebarMenuButton
-                        isActive={activeTab === item.value}
-                        tooltip={item.title}
-                        onClick={() => onTabChange(item.value)}
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      isActive={groupActive}
+                      tooltip={group.label}
+                      onClick={handleClick}
+                    >
+                      <group.icon className="h-4 w-4 shrink-0" />
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroup>
             );
