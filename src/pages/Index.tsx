@@ -3,15 +3,14 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Clock, AlertTriangle, Activity, LogOut, User, Shield } from "lucide-react";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { DashboardSidebar } from "@/components/DashboardSidebar";
 import NetworkTrafficChart from "@/components/NetworkTrafficChart";
 import SystemStatus from "@/components/SystemStatus";
 import NetworkEventsList from "@/components/NetworkEventsList";
-import ThreatCorrelator from "@/components/ThreatCorrelator";
 import AlertsPanel from "@/components/AlertsPanel";
 import DetectionEngine from "@/components/DetectionEngine";
-import ThreatMap from "@/components/ThreatMap";
 import DemoModeToggle from "@/components/DemoModeToggle";
 import MLModelManager from "@/components/MLModelManager";
 import RealtimeInference from "@/components/RealtimeInference";
@@ -71,32 +70,6 @@ const NetworkRiskCard = () => {
     </Card>
   );
 };
-
-const tabs = [
-  { value: "overview", label: "Overview" },
-  { value: "monitor", label: "Monitor" },
-  { value: "incidents", label: "Incidents" },
-  { value: "datasets", label: "Datasets" },
-  { value: "assets", label: "Assets" },
-  { value: "threats", label: "Threat Intel" },
-  { value: "malware", label: "Malware Sigs" },
-  { value: "rules", label: "Detection Rules" },
-  { value: "events", label: "Events" },
-  { value: "alerts", label: "Alerts" },
-  { value: "engine", label: "Engine" },
-  { value: "map", label: "Map" },
-  { value: "ml", label: "ML Models" },
-  { value: "inference", label: "Inference" },
-  { value: "adaptive", label: "Adaptive" },
-  { value: "notifications", label: "Notifications" },
-  { value: "correlation", label: "Correlation" },
-  { value: "ml-metrics", label: "ML Metrics" },
-  { value: "hunt", label: "Hunt" },
-  { value: "topology", label: "Topology" },
-  { value: "retention", label: "Retention" },
-  { value: "risk", label: "Risk Dashboard" },
-  { value: "timeline", label: "Timeline" },
-];
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -191,7 +164,6 @@ const Index = () => {
       case "rules": return <EnhancedRuleManager />;
       case "alerts": return <AlertsPanel dataStore={dataStore} />;
       case "engine": return <DetectionEngine dataStore={dataStore} />;
-      case "map": return <ThreatMap threats={dataStore.threats} />;
       case "ml": return <MLModelManager onModelTrained={setActiveModel} />;
       case "inference": return <RealtimeInference activeModel={activeModel} />;
       case "adaptive": return <AdaptiveLearning />;
@@ -208,57 +180,51 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <OfflineBanner />
-      <PWAInstallPrompt />
+    <SidebarProvider>
+      <div className="min-h-screen flex w-full bg-background">
+        <DashboardSidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {/* Header */}
-      <header className="border-b bg-background sticky top-0 z-20">
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">Advanced IDS Dashboard</h1>
-            <p className="text-xs text-muted-foreground">
-              Intrusion Detection & Security Monitoring System
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge variant={dataStore.systemMetrics.detectionEngineStatus === "online" ? "default" : "destructive"} className="animate-pulse">
-              {dataStore.systemMetrics.detectionEngineStatus.toUpperCase()}
-            </Badge>
-            <Badge variant="outline" className="capitalize">{role}</Badge>
-            <div className="hidden md:flex items-center gap-2">
-              <User className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">{user?.email}</span>
+        <div className="flex-1 flex flex-col min-w-0">
+          <OfflineBanner />
+          <PWAInstallPrompt />
+
+          <header className="border-b bg-background sticky top-0 z-20">
+            <div className="px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <SidebarTrigger />
+                <div>
+                  <h1 className="text-xl font-bold">Advanced IDS Dashboard</h1>
+                  <p className="text-xs text-muted-foreground">
+                    Intrusion Detection & Security Monitoring System
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant={dataStore.systemMetrics.detectionEngineStatus === "online" ? "default" : "destructive"} className="animate-pulse">
+                  {dataStore.systemMetrics.detectionEngineStatus.toUpperCase()}
+                </Badge>
+                <Badge variant="outline" className="capitalize">{role}</Badge>
+                <div className="hidden md:flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{user?.email}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={signOut}>
+                  <LogOut className="h-4 w-4 mr-1" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </Button>
+              </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={signOut}>
-              <LogOut className="h-4 w-4 mr-1" />
-              <span className="hidden sm:inline">Sign Out</span>
-            </Button>
-          </div>
-        </div>
-        <div className="px-4 pb-2">
-          <DemoModeToggle isDemoMode={dataStore.isDemoMode} onToggle={dataStore.toggleDemoMode} />
-        </div>
+            <div className="px-4 pb-2">
+              <DemoModeToggle isDemoMode={dataStore.isDemoMode} onToggle={dataStore.toggleDemoMode} />
+            </div>
+          </header>
 
-        {/* Horizontal scrollable tabs */}
-        <div className="px-4 pb-2 overflow-x-auto scrollbar-hide">
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="inline-flex w-max h-auto gap-1 bg-muted/50 p-1">
-              {tabs.map(tab => (
-                <TabsTrigger key={tab.value} value={tab.value} className="text-xs whitespace-nowrap px-3 py-1.5">
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <main className="flex-1 p-4 md:p-6">
+            {renderContent()}
+          </main>
         </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="p-4 md:p-6">
-        {renderContent()}
-      </main>
-    </div>
+      </div>
+    </SidebarProvider>
   );
 };
 

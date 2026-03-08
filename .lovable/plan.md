@@ -1,44 +1,62 @@
 
 
-# Sidebar Navigation with Grouped Pages
+# Move ML Training to Web Worker
 
-## Structure
+## Problem
+ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-Replace the 22-tab horizontal bar with a collapsible sidebar. Pages are grouped into 7 sections:
+## Solution
+Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
 
-| Group | Items |
-|---|---|
-| **Operations** | Overview, Monitor, Alerts, Events |
-| **Incidents** | Incidents, Correlation, Timeline |
-| **Intelligence** | Threat Intel, Hunt, Risk Dashboard, Assets |
-| **Topology** | Topology (absorbs Map — ThreatMap rendered inside NetworkTopology or kept as "Topology") |
-| **Detection Engine** | Engine (main), ML Models, Inference, Adaptive, ML Metrics (sub-tabs within Engine page) |
-| **Configuration** | Detection Rules, Malware Sigs, Datasets, Retention |
-| **Notifications** | Notifications |
+```text
+UI Thread                    Web Worker
+   │                            │
+   ├─ postMessage({algorithm}) ──►
+   │                            ├─ generateSyntheticData()
+   │  ◄── progress(30%) ───────┤
+   │                            ├─ preprocessData()
+   │  ◄── progress(60%) ───────┤
+   │                            ├─ trainModel()
+   │  ◄── progress(90%) ───────┤
+   │                            ├─ calculateMetrics()
+   │  ◄── result({metrics}) ───┤
+   │                            │
+   ▼ Update UI + save to DB     ▼
+```
 
-## Changes
+## Files to Create
 
-### 1. Rewrite `src/components/DashboardSidebar.tsx`
+### 1. `src/workers/mlTraining.worker.ts`
+A self-contained Web Worker that:
+- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
+- Contains data generation, normalization, SMOTE, feature extraction logic
+- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
+- Listens for `{ type: 'train', algorithm }` messages
+- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
 
-New grouped nav matching above structure. Each group is a collapsible section with icon. The "Detection Engine" and "Configuration" groups have nested items. Sidebar uses `collapsible="icon"` mode.
+**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
 
-### 2. Rewrite `src/pages/Index.tsx`
+### 2. `src/hooks/useMLWorker.ts`
+A hook that:
+- Creates/manages the Worker instance
+- Exposes `trainInWorker(algorithm)` returning a Promise
+- Forwards progress updates to a callback
+- Handles cleanup on unmount
 
-- Wrap in `SidebarProvider` with `SidebarTrigger` in header (always visible)
-- Remove horizontal `Tabs`/`TabsList`/`TabsTrigger`
-- Keep `activeTab` state driven by sidebar clicks
-- Remove `map` tab — merge into `topology` (render `ThreatMap` as a tab inside `NetworkTopology`, or just remove the separate map route and keep Topology)
-- For "Detection Engine" group: clicking sub-items (ml, inference, adaptive, ml-metrics) still sets `activeTab` to those values and renders their components directly. The sidebar just visually nests them under "Detection Engine"
-- Same for "Configuration" group items
+## Files to Modify
 
-### 3. Remove `map` from navigation
+### 3. `src/components/MLModelManager.tsx`
+- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
+- `trainNewModel` sends work to the worker, receives metrics back
+- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
+- Progress bar driven by worker progress messages
 
-The `ThreatMap` component stays in codebase but is no longer a top-level nav item. Topology replaces it.
+### 4. `src/hooks/useMLPipeline.ts`
+- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
+- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
 
-### Files
-
-| Action | File |
-|---|---|
-| Modify | `src/components/DashboardSidebar.tsx` — new grouped structure |
-| Modify | `src/pages/Index.tsx` — sidebar layout, remove tab bar, remove map tab |
+## Technical Notes
+- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
+- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
+- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
 
