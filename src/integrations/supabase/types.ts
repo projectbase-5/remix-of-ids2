@@ -1230,6 +1230,39 @@ export type Database = {
         }
         Relationships: []
       }
+      suppression_rules: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          rule_type: string
+          suppressed_count: number
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          rule_type: string
+          suppressed_count?: number
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          rule_type?: string
+          suppressed_count?: number
+          updated_at?: string
+          value?: string
+        }
+        Relationships: []
+      }
       system_metrics_log: {
         Row: {
           active_connections: number | null
