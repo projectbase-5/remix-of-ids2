@@ -12,9 +12,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
 import { toast } from 'sonner';
 
-const CorrelationEngine = () => {
+const CorrelationEngine = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [historicalMode, setHistoricalMode] = useState(false);
   const [windowMinutes, setWindowMinutes] = useState('15');
+  const [demoGroups, setDemoGroups] = useState<CorrelationGroup[]>([]);
   
   const { 
     groups, 
@@ -36,6 +37,12 @@ const CorrelationEngine = () => {
 
   // Fetch and correlate events from all sources
   useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoCorrelationGroups }) => {
+        setDemoGroups(demoCorrelationGroups as unknown as CorrelationGroup[]);
+      });
+      return;
+    }
     const loadEvents = async () => {
       const events = await fetchAllEvents(parseInt(windowMinutes));
       if (events.length > 0) {
@@ -43,7 +50,7 @@ const CorrelationEngine = () => {
       }
     };
     loadEvents();
-  }, [windowMinutes, fetchAllEvents, addEvents]);
+  }, [isDemoMode, windowMinutes, fetchAllEvents, addEvents]);
 
   // Historical mode
   useEffect(() => {

@@ -35,7 +35,7 @@ interface DriftDetection {
   action_taken: string;
 }
 
-const AdaptiveLearning: React.FC = () => {
+const AdaptiveLearning: React.FC<{ isDemoMode?: boolean }> = ({ isDemoMode }) => {
   const { driftStats, isRetraining, retrainProgress, retrainOnLiveData, checkDrift } = useModelUpdatePipeline();
 
   const [activeConfig, setActiveConfig] = useState<AdaptiveConfig>({
@@ -58,8 +58,15 @@ const AdaptiveLearning: React.FC = () => {
   });
 
   useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoAdaptiveConfigs }) => {
+        setSavedConfigs(demoAdaptiveConfigs.map((c: any) => ({ ...c, resource_constraints: c.resource_constraints as any })));
+        setModelPerformance({ currentAccuracy: 0.967, baseline: 0.95, adaptationCount: 3, lastUpdate: new Date() });
+      });
+      return;
+    }
     fetchAdaptiveConfigs();
-  }, []);
+  }, [isDemoMode]);
 
   // Update performance stats from real drift data
   useEffect(() => {

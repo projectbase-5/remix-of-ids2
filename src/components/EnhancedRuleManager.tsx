@@ -12,14 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useThreatIntelligence } from '@/hooks/useThreatIntelligence';
 import { Settings, Plus, Trash2, Edit, Shield, Zap, Eye } from 'lucide-react';
 
-const EnhancedRuleManager = () => {
+const EnhancedRuleManager = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const { 
     detectionRules, 
     loading, 
     addDetectionRule, 
     updateDetectionRule, 
     deleteDetectionRule 
-  } = useThreatIntelligence();
+  } = useThreatIntelligence({ isDemoMode });
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newRule, setNewRule] = useState({

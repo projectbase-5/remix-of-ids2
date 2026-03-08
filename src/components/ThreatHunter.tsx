@@ -48,7 +48,7 @@ const HUNT_TYPES = [
   { id: 'data_exfil', label: 'Data Exfiltration', icon: Database, desc: 'Abnormally high outbound data' },
 ];
 
-const ThreatHunter = () => {
+const ThreatHunter = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [filters, setFilters] = useState<HuntFilters>(DEFAULT_FILTERS);
   const [results, setResults] = useState<HuntResult[]>([]);
   const [advancedResults, setAdvancedResults] = useState<AdvancedHuntResult[]>([]);
@@ -60,11 +60,20 @@ const ThreatHunter = () => {
 
   // Load advanced hunt results
   const fetchAdvancedResults = useCallback(async () => {
+    if (isDemoMode) return;
     const { data } = await supabase.from('hunt_results').select('*').order('created_at', { ascending: false }).limit(200);
     if (data) setAdvancedResults(data.map(d => ({ ...d, details: (typeof d.details === 'object' && d.details !== null ? d.details : {}) as Record<string, any> })));
-  }, []);
+  }, [isDemoMode]);
 
-  useEffect(() => { fetchAdvancedResults(); }, [fetchAdvancedResults]);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoHuntResults }) => {
+        setAdvancedResults(demoHuntResults as AdvancedHuntResult[]);
+      });
+      return;
+    }
+    fetchAdvancedResults();
+  }, [isDemoMode, fetchAdvancedResults]);
 
   const getTimeCutoff = (range: string): string => {
     const ms: Record<string, number> = { '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000, '30d': 2592000000 };

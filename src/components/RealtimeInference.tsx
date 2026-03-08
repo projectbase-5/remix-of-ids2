@@ -23,9 +23,10 @@ interface PredictionResult {
 
 interface RealtimeInferenceProps {
   activeModel?: any;
+  isDemoMode?: boolean;
 }
 
-const RealtimeInference: React.FC<RealtimeInferenceProps> = ({ activeModel }) => {
+const RealtimeInference: React.FC<RealtimeInferenceProps> = ({ activeModel, isDemoMode }) => {
   const [isInferenceActive, setIsInferenceActive] = useState(false);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
   const [inferenceStats, setInferenceStats] = useState({

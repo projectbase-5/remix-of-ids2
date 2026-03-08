@@ -39,13 +39,14 @@ interface PredictionStat {
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--destructive))', 'hsl(210, 70%, 50%)', 'hsl(45, 80%, 50%)', 'hsl(150, 60%, 45%)', 'hsl(280, 60%, 55%)'];
 
-const MLMetricsDashboard = () => {
+const MLMetricsDashboard = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [evaluations, setEvaluations] = useState<ModelEval[]>([]);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [predictionStats, setPredictionStats] = useState<PredictionStat[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = async () => {
+    if (isDemoMode) return;
     setLoading(true);
     const [evalsRes, modelsRes, predsRes] = await Promise.all([
       supabase.from('model_evaluations').select('*').order('created_at', { ascending: true }).limit(100),
@@ -62,7 +63,20 @@ const MLMetricsDashboard = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoModelEvaluations, demoMLModels, demoPredictions }) => {
+        setEvaluations(demoModelEvaluations as unknown as ModelEval[]);
+        setModels(demoMLModels.map(m => ({ id: m.id, name: m.name, algorithm: m.algorithm, status: m.status, is_active: m.is_active, created_at: m.created_at })) as ModelInfo[]);
+        const counts: Record<string, number> = {};
+        demoPredictions.forEach(p => { counts[p.prediction] = (counts[p.prediction] || 0) + 1; });
+        setPredictionStats(Object.entries(counts).map(([prediction, count]) => ({ prediction, count })));
+        setLoading(false);
+      });
+      return;
+    }
+    fetchData();
+  }, [isDemoMode]);
 
   const handleRealtime = useCallback(() => { fetchData(); }, []);
   useRealtimeSubscription('model_evaluations', ['INSERT'], handleRealtime);

@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { useThreatIntelligence } from '@/hooks/useThreatIntelligence';
 import { Globe, Search, RefreshCw, Shield, AlertTriangle, Wifi, Server, MapPin } from 'lucide-react';
 
-const ThreatIntelligenceDashboard = () => {
+const ThreatIntelligenceDashboard = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const { 
     ipReputations, 
     threatFeeds, 
@@ -18,7 +18,7 @@ const ThreatIntelligenceDashboard = () => {
     checking, 
     checkIPReputation,
     refresh 
-  } = useThreatIntelligence();
+  } = useThreatIntelligence({ isDemoMode });
   
   const [ipInput, setIPInput] = useState('');
   const [checkResult, setCheckResult] = useState<{
