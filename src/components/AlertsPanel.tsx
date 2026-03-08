@@ -32,9 +32,33 @@ interface AlertMetadata {
   };
 }
 
+interface AssetInfo {
+  hostname: string | null;
+  device_type: string;
+  criticality: string;
+}
+
 const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
   const [filter, setFilter] = useState<string>("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [assetMap, setAssetMap] = useState<Record<string, AssetInfo>>({});
+
+  // Fetch asset inventory for IP enrichment
+  useEffect(() => {
+    const fetchAssets = async () => {
+      const { data } = await supabase
+        .from("asset_inventory")
+        .select("ip_address, hostname, device_type, criticality");
+      if (data) {
+        const map: Record<string, AssetInfo> = {};
+        for (const a of data) {
+          map[a.ip_address] = { hostname: a.hostname, device_type: a.device_type, criticality: a.criticality };
+        }
+        setAssetMap(map);
+      }
+    };
+    fetchAssets();
+  }, []);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
