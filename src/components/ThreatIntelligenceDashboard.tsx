@@ -271,6 +271,9 @@ const ThreatIntelligenceDashboard = () => {
                               {ip.threat_types?.slice(0, 2).map((t, i) => (
                                 <Badge key={i} variant="secondary" className="text-xs">{t}</Badge>
                               ))}
+                              <Badge variant="outline" className="text-xs">
+                                {ip.source === 'abuseipdb' ? '🔴 API' : ip.source === 'heuristic' ? '⚙️' : ip.source}
+                              </Badge>
                             </div>
                           </div>
                         </div>
