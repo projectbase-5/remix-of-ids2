@@ -33,6 +33,7 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
   useEffect(() => {
     fetchModelsFromDatabase();
     fetchEvaluations();
+    fetchLiveDataCount();
   }, []);
 
   const fetchModelsFromDatabase = async () => {
