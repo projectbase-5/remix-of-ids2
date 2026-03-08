@@ -241,7 +241,7 @@ const Index = () => {
         </div>
 
         {/* Horizontal scrollable tabs */}
-        <div className="px-4 pb-2 overflow-x-auto">
+        <div className="px-4 pb-2 overflow-x-auto scrollbar-hide">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="inline-flex w-max h-auto gap-1 bg-muted/50 p-1">
               {tabs.map(tab => (
