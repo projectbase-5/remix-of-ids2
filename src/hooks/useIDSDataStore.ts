@@ -380,6 +380,78 @@ export const useIDSDataStore = () => {
     return () => clearInterval(interval);
   }, [isMonitoring, isDemoMode]);
 
+  // ==========================================================================
+  // DEMO MODE — Global synthetic event & threat generation
+  // ==========================================================================
+  useEffect(() => {
+    if (!isMonitoring || !isDemoMode) return;
+
+    const protocols = ["TCP", "UDP", "ICMP", "HTTP", "HTTPS"];
+    const commonPorts = [80, 443, 22, 21, 23, 25, 53, 110, 143, 993, 995];
+    const suspiciousPorts = [1433, 3389, 5432, 6379, 27017];
+
+    const generateNetworkEvent = (): NetworkEvent => {
+      const isSuspicious = Math.random() > 0.85;
+      const port = isSuspicious
+        ? suspiciousPorts[Math.floor(Math.random() * suspiciousPorts.length)]
+        : commonPorts[Math.floor(Math.random() * commonPorts.length)];
+
+      return {
+        id: `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: new Date().toISOString(),
+        sourceIP: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        destinationIP: `192.168.1.${Math.floor(Math.random() * 255)}`,
+        protocol: protocols[Math.floor(Math.random() * protocols.length)],
+        port,
+        packetSize: Math.floor(Math.random() * 1500) + 64,
+        flags: isSuspicious ? ["SYN", "FIN"] : ["ACK"],
+        payload: isSuspicious ? "SELECT * FROM users WHERE 1=1" : undefined,
+      };
+    };
+
+    const processEvent = (event: NetworkEvent) => {
+      // Simplified inline rule matching for demo
+      const rules = [
+        { pattern: "port_scan", check: () => event.port > 1000 && event.flags.includes("SYN") && Math.random() > 0.9, confidence: 85, attackType: "Port Scan", severity: "medium" as const },
+        { pattern: "ddos", check: () => event.packetSize > 1200 && Math.random() > 0.95, confidence: 92, attackType: "DDoS", severity: "high" as const },
+        { pattern: "brute_force", check: () => (event.port === 22 || event.port === 3389) && Math.random() > 0.93, confidence: 88, attackType: "Brute Force", severity: "high" as const },
+        { pattern: "sql_injection", check: () => !!event.payload?.includes("SELECT"), confidence: 95, attackType: "SQL Injection", severity: "high" as const },
+        { pattern: "anomaly", check: () => (event.packetSize < 100 || event.packetSize > 1400) && Math.random() > 0.92, confidence: 75, attackType: "Anomaly", severity: "low" as const },
+      ];
+
+      for (const rule of rules) {
+        if (rule.check()) {
+          const baseScore = rule.severity === "high" ? 75 : rule.severity === "medium" ? 50 : 25;
+          const threatScore = Math.min(100, Math.round(baseScore * (rule.confidence / 100) + (rule.attackType.includes("DDoS") || rule.attackType.includes("SQL") ? 15 : 0)));
+
+          addThreat({
+            id: `threat-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            timestamp: new Date().toISOString(),
+            ruleId: `demo-${rule.pattern}`,
+            ruleName: rule.attackType,
+            severity: rule.severity,
+            confidence: rule.confidence,
+            sourceIP: event.sourceIP,
+            targetIP: event.destinationIP,
+            attackType: rule.attackType,
+            description: `${rule.attackType} detected from ${event.sourceIP} targeting ${event.destinationIP}`,
+            evidence: [event],
+            threatScore,
+          });
+          break; // one threat per event max
+        }
+      }
+    };
+
+    const interval = setInterval(() => {
+      const event = generateNetworkEvent();
+      addNetworkEvent(event);
+      processEvent(event);
+    }, 300);
+
+    return () => clearInterval(interval);
+  }, [isMonitoring, isDemoMode, addNetworkEvent, addThreat]);
+
   // ---------------------------------------------------------------------------
   // toggleDemoMode — clear all accumulated data when switching modes so stale
   // demo data doesn't bleed into live mode and vice-versa.
