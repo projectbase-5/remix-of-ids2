@@ -428,6 +428,78 @@ export type Database = {
         }
         Relationships: []
       }
+      host_risk_scores: {
+        Row: {
+          alert_score: number
+          anomaly_score: number
+          asset_multiplier: number
+          created_at: string
+          hostname: string | null
+          id: string
+          ip_address: string
+          reputation_score: number
+          risk_level: string
+          total_risk: number
+          updated_at: string
+        }
+        Insert: {
+          alert_score?: number
+          anomaly_score?: number
+          asset_multiplier?: number
+          created_at?: string
+          hostname?: string | null
+          id?: string
+          ip_address: string
+          reputation_score?: number
+          risk_level?: string
+          total_risk?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_score?: number
+          anomaly_score?: number
+          asset_multiplier?: number
+          created_at?: string
+          hostname?: string | null
+          id?: string
+          ip_address?: string
+          reputation_score?: number
+          risk_level?: string
+          total_risk?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      hunt_results: {
+        Row: {
+          created_at: string
+          details: Json
+          hunt_type: string
+          id: string
+          score: number
+          source_ip: string
+          target: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json
+          hunt_type: string
+          id?: string
+          score?: number
+          source_ip: string
+          target: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json
+          hunt_type?: string
+          id?: string
+          score?: number
+          source_ip?: string
+          target?: string
+        }
+        Relationships: []
+      }
       incident_logs: {
         Row: {
           assigned_to: string | null
