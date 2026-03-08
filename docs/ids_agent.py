@@ -507,6 +507,12 @@ def main():
         dedupe_window=60,
     )
 
+    suppression_engine = AlertSuppressionEngine(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        rule_refresh_interval=60,
+    )
+
     print("=" * 60)
     print("  IDS Real-Time Agent v3 — Full Pipeline")
     print("  Detection → Enrichment → Response → Notification")
