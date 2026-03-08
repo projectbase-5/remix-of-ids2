@@ -16,9 +16,10 @@ import { ModelEvaluationDashboard } from './ModelEvaluationDashboard';
 
 interface MLModelManagerProps {
   onModelTrained?: (model: MLModel) => void;
+  isDemoMode?: boolean;
 }
 
-const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
+const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained, isDemoMode }) => {
   const mlPipeline = useMLPipeline();
   const { trainInWorker, cancelTraining, progress: workerProgress, isTraining: workerIsTraining } = useMLWorker();
   const { retrainOnLiveData, isRetraining, retrainProgress } = useModelUpdatePipeline();
@@ -31,10 +32,18 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
   const [liveDataCount, setLiveDataCount] = useState(0);
 
   useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoMLModels, demoModelEvaluations }) => {
+        setDbModels(demoMLModels);
+        setEvaluations(demoModelEvaluations);
+        setLiveDataCount(1250);
+      });
+      return;
+    }
     fetchModelsFromDatabase();
     fetchEvaluations();
     fetchLiveDataCount();
-  }, []);
+  }, [isDemoMode]);
 
   const fetchModelsFromDatabase = async () => {
     try {

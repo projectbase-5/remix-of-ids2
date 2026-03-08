@@ -143,7 +143,7 @@ const PLAYBOOKS = [
   },
 ];
 
-export default function IncidentResponse() {
+export default function IncidentResponse({ isDemoMode }: { isDemoMode?: boolean }) {
   const [incidents, setIncidents] = useState<IncidentDetails[]>([]);
   const [selectedIncident, setSelectedIncident] = useState<IncidentDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,6 +164,7 @@ export default function IncidentResponse() {
   const [executingAction, setExecutingAction] = useState<string | null>(null);
 
   const loadIncidents = useCallback(async () => {
+    if (isDemoMode) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -199,9 +200,10 @@ export default function IncidentResponse() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isDemoMode]);
 
   const loadScoredIncidents = useCallback(async () => {
+    if (isDemoMode) return;
     setScoredLoading(true);
     try {
       const { data, error } = await supabase
@@ -222,9 +224,10 @@ export default function IncidentResponse() {
     } finally {
       setScoredLoading(false);
     }
-  }, []);
+  }, [isDemoMode]);
 
   const loadResponseActions = useCallback(async () => {
+    if (isDemoMode) return;
     setResponseLoading(true);
     try {
       const { data, error } = await supabase
@@ -240,13 +243,31 @@ export default function IncidentResponse() {
     } finally {
       setResponseLoading(false);
     }
-  }, []);
+  }, [isDemoMode]);
 
   useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoIncidentLogs, demoScoredIncidents, demoResponseActions }) => {
+        const enhancedIncidents: IncidentDetails[] = demoIncidentLogs.map((incident: any) => ({
+          ...incident,
+          timeline: [{ id: `tl-${incident.id}-1`, timestamp: incident.created_at, action: 'Incident created', user: 'System' }],
+          notes: '',
+          impactScore: calculateImpactScore(incident.severity),
+          containmentStatus: incident.status === 'resolved' ? 'recovered' as const : 'not_started' as const,
+        }));
+        setIncidents(enhancedIncidents);
+        setScoredIncidents(demoScoredIncidents as ScoredIncident[]);
+        setResponseActions(demoResponseActions);
+        setLoading(false);
+        setScoredLoading(false);
+        setResponseLoading(false);
+      });
+      return;
+    }
     loadIncidents();
     loadScoredIncidents();
     loadResponseActions();
-  }, [loadIncidents, loadScoredIncidents, loadResponseActions]);
+  }, [isDemoMode, loadIncidents, loadScoredIncidents, loadResponseActions]);
 
   useRealtimeSubscription('incident_logs', ['INSERT', 'UPDATE'], useCallback(() => {
     loadIncidents();

@@ -84,7 +84,7 @@ const HUNT_TYPE_TO_PHASE: Record<string, string> = {
   data_exfil: "exfiltration",
 };
 
-const AttackTimeline = () => {
+const AttackTimeline = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [timelines, setTimelines] = useState<AttackTimelineData[]>([]);
   const [selectedIp, setSelectedIp] = useState<string>("all");
   const [sourceIps, setSourceIps] = useState<string[]>([]);
@@ -93,6 +93,7 @@ const AttackTimeline = () => {
   const { toast } = useToast();
 
   const fetchTimelines = useCallback(async () => {
+    if (isDemoMode) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("attack_timelines")
@@ -109,9 +110,19 @@ const AttackTimeline = () => {
       setSourceIps(ips);
     }
     setLoading(false);
-  }, []);
+  }, [isDemoMode]);
 
-  useEffect(() => { fetchTimelines(); }, [fetchTimelines]);
+  useEffect(() => {
+    if (isDemoMode) {
+      import('@/lib/demoData').then(({ demoAttackTimelines }) => {
+        setTimelines(demoAttackTimelines as AttackTimelineData[]);
+        setSourceIps([...new Set(demoAttackTimelines.map(t => t.source_ip))]);
+        setLoading(false);
+      });
+      return;
+    }
+    fetchTimelines();
+  }, [isDemoMode, fetchTimelines]);
 
   // Client-side timeline builder
   const buildTimelines = async () => {
