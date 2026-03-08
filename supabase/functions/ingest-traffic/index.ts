@@ -210,7 +210,38 @@ Deno.serve(async (req) => {
     }
 
     // ==================================================================
-    // 6. Upsert scored incidents from agent-side scoring engine
+    // 6. Upsert assets into `asset_inventory`
+    // ==================================================================
+    if (body.assets && Array.isArray(body.assets) && body.assets.length > 0) {
+      let assetsUpserted = 0;
+      for (const asset of body.assets) {
+        const { error } = await supabase
+          .from("asset_inventory")
+          .upsert(
+            {
+              ip_address: asset.ip_address,
+              device_type: asset.device_type || "unknown",
+              os: asset.os || null,
+              open_ports: asset.open_ports || [],
+              services: asset.services || [],
+              last_seen: asset.last_seen
+                ? new Date(asset.last_seen * 1000).toISOString()
+                : new Date().toISOString(),
+            },
+            { onConflict: "ip_address" }
+          );
+        if (error) {
+          console.error("Error upserting asset:", error);
+          results.assets_error = error.message;
+        } else {
+          assetsUpserted++;
+        }
+      }
+      results.assets_upserted = assetsUpserted;
+    }
+
+    // ==================================================================
+    // 7. Upsert scored incidents from agent-side scoring engine
     // ==================================================================
     if (body.incidents && Array.isArray(body.incidents) && body.incidents.length > 0) {
       let incidentsInserted = 0;

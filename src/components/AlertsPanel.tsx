@@ -211,6 +211,12 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
                             <div className="flex items-center space-x-1">
                               <MapPin className="h-3 w-3" />
                               <span>From: {alert.sourceIP}</span>
+                              {assetMap[alert.sourceIP] && (
+                                <Badge variant="secondary" className="text-xs ml-1">
+                                  <Monitor className="h-3 w-3 mr-0.5" />
+                                  {assetMap[alert.sourceIP].hostname || assetMap[alert.sourceIP].device_type.replace(/_/g, " ")}
+                                </Badge>
+                              )}
                               {srcRep?.country_code && (
                                 <Badge variant="outline" className="text-xs ml-1">{srcRep.country_code}</Badge>
                               )}
@@ -218,6 +224,12 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
                             <div className="flex items-center space-x-1">
                               <Shield className="h-3 w-3" />
                               <span>Target: {alert.targetIP}</span>
+                              {assetMap[alert.targetIP] && (
+                                <Badge variant="secondary" className="text-xs ml-1">
+                                  <Monitor className="h-3 w-3 mr-0.5" />
+                                  {assetMap[alert.targetIP].hostname || assetMap[alert.targetIP].device_type.replace(/_/g, " ")}
+                                </Badge>
+                              )}
                             </div>
                           </div>
 

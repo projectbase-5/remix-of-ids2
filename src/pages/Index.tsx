@@ -196,6 +196,10 @@ const Index = () => {
             <DatasetManager />
           </TabsContent>
 
+          <TabsContent value="assets">
+            <AssetInventory />
+          </TabsContent>
+
           <TabsContent value="events">
             <NetworkEventsList dataStore={dataStore} />
           </TabsContent>
