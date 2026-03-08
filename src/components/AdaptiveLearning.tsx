@@ -36,6 +36,8 @@ interface DriftDetection {
 }
 
 const AdaptiveLearning: React.FC = () => {
+  const { driftStats, isRetraining, retrainProgress, retrainOnLiveData, checkDrift } = useModelUpdatePipeline();
+
   const [activeConfig, setActiveConfig] = useState<AdaptiveConfig>({
     environment_type: 'Cloud',
     resource_constraints: { memory: 2048, cpu: 80, bandwidth: 1000 },
@@ -49,16 +51,34 @@ const AdaptiveLearning: React.FC = () => {
   const [savedConfigs, setSavedConfigs] = useState<AdaptiveConfig[]>([]);
   const [driftDetections, setDriftDetections] = useState<DriftDetection[]>([]);
   const [modelPerformance, setModelPerformance] = useState({
-    currentAccuracy: 94.2,
-    baseline: 92.8,
-    adaptationCount: 15,
-    lastUpdate: new Date()
+    currentAccuracy: 0,
+    baseline: 0,
+    adaptationCount: 0,
+    lastUpdate: driftStats.lastRetrained || new Date()
   });
 
   useEffect(() => {
     fetchAdaptiveConfigs();
-    simulateDriftDetection();
   }, []);
+
+  // Update performance stats from real drift data
+  useEffect(() => {
+    if (driftStats.isDrifting) {
+      const detection: DriftDetection = {
+        timestamp: driftStats.lastChecked || new Date(),
+        metric: 'prediction_distribution',
+        current_value: 1 - driftStats.driftScore,
+        baseline_value: 1,
+        drift_score: driftStats.driftScore,
+        action_taken: driftStats.driftScore > 0.1 ? 'Retraining Recommended' : 'Monitoring'
+      };
+      setDriftDetections(prev => [detection, ...prev.slice(0, 19)]);
+    }
+    setModelPerformance(prev => ({
+      ...prev,
+      lastUpdate: driftStats.lastRetrained || prev.lastUpdate,
+    }));
+  }, [driftStats.isDrifting, driftStats.driftScore, driftStats.lastChecked, driftStats.lastRetrained]);
 
   const fetchAdaptiveConfigs = async () => {
     try {
