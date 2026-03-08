@@ -63,6 +63,7 @@ from asset_discovery import AssetDiscovery
 from response_manager import ResponseManager
 from notification_dispatcher import NotificationDispatcher, NotificationPayload
 from risk_scoring_engine import compute_host_risk_scores, compute_network_risk, push_risk_scores
+from alert_suppression_engine import AlertSuppressionEngine
 
 logger = logging.getLogger("ids_agent")
 
