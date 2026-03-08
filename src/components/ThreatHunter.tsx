@@ -309,6 +309,7 @@ const ThreatHunter = ({ isDemoMode }: { isDemoMode?: boolean }) => {
           <Tabs defaultValue="search">
             <TabsList>
               <TabsTrigger value="search">Filter Search</TabsTrigger>
+              <TabsTrigger value="logs">Log Search</TabsTrigger>
               <TabsTrigger value="advanced">Advanced Hunts</TabsTrigger>
               <TabsTrigger value="results">Hunt Results ({advancedResults.length})</TabsTrigger>
             </TabsList>
