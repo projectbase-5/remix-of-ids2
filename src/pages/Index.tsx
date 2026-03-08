@@ -111,6 +111,7 @@ const Index = () => {
               <TabsTrigger value="hunt">Hunt</TabsTrigger>
               <TabsTrigger value="topology">Topology</TabsTrigger>
               <TabsTrigger value="retention">Retention</TabsTrigger>
+              <TabsTrigger value="risk">Risk Scores</TabsTrigger>
             </TabsList>
           </div>
 
