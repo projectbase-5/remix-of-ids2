@@ -94,6 +94,7 @@ const Index = () => {
               <TabsTrigger value="malware">Malware Sigs</TabsTrigger>
               <TabsTrigger value="malware-behavior">Malware Behavior</TabsTrigger>
               <TabsTrigger value="rules">Detection Rules</TabsTrigger>
+              <TabsTrigger value="assets">Assets</TabsTrigger>
               <TabsTrigger value="events">Events</TabsTrigger>
               <TabsTrigger value="alerts">Alerts</TabsTrigger>
               <TabsTrigger value="engine">Engine</TabsTrigger>
