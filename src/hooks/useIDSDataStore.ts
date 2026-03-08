@@ -352,6 +352,21 @@ export const useIDSDataStore = () => {
             networkHealth: Number(m.network_health),
             activeConnections: m.active_connections || prev.activeConnections,
           }));
+        } else {
+          // No agent data — fall back to browser-based metrics
+          setSystemMetrics((prev) => {
+            collectBrowserMetrics(prev).then((browser) => {
+              setSystemMetrics((p) => ({
+                ...p,
+                cpuUsage: browser.cpuUsage,
+                memoryUsage: browser.memoryUsage,
+                diskUsage: browser.diskUsage,
+                networkHealth: browser.networkHealth,
+                activeConnections: browser.activeConnections,
+              }));
+            });
+            return prev;
+          });
         }
       } catch (err) {
         console.error('Live polling error:', err);
