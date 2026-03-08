@@ -1,4 +1,4 @@
-/**
+/* useIDSDataStore — Central state manager for the IDS Dashboard */
  * useIDSDataStore — Central state manager for the IDS Dashboard
  * ==============================================================
  * This hook owns ALL runtime state for the dashboard: network events,
