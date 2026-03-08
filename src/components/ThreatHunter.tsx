@@ -151,6 +151,44 @@ const ThreatHunter = ({ isDemoMode }: { isDemoMode?: boolean }) => {
     setLoading(false);
   }, [filters]);
 
+  // ── Log Search ──────────────────────────────────────────────────
+  const executeLogSearch = useCallback(async () => {
+    setLogLoading(true);
+    const cutoff = getTimeCutoff(logFilters.timeRange);
+    const combined: LogResult[] = [];
+
+    try {
+      // Query network_traffic
+      let trafficQ = supabase.from('network_traffic').select('*').gte('created_at', cutoff).order('created_at', { ascending: false }).limit(300);
+      if (logFilters.sourceIP) trafficQ = trafficQ.ilike('source_ip', `%${logFilters.sourceIP}%`);
+      if (logFilters.destinationIP) trafficQ = trafficQ.ilike('destination_ip', `%${logFilters.destinationIP}%`);
+      if (logFilters.protocol !== 'all') trafficQ = trafficQ.eq('protocol', logFilters.protocol);
+      if (logFilters.port) trafficQ = trafficQ.eq('port', parseInt(logFilters.port));
+      if (logFilters.payloadKeyword) trafficQ = trafficQ.ilike('payload_preview', `%${logFilters.payloadKeyword}%`);
+      if (logFilters.category === 'suspicious') trafficQ = trafficQ.eq('is_suspicious', true);
+
+      const { data: traffic } = await trafficQ;
+      traffic?.forEach((t: any) => combined.push({ id: t.id, table: 'network_traffic', timestamp: t.created_at, source_ip: t.source_ip, destination_ip: t.destination_ip, protocol: t.protocol, port: t.port, packet_size: t.packet_size, payload_preview: t.payload_preview, is_suspicious: t.is_suspicious }));
+
+      // Query live_alerts
+      if (logFilters.category !== 'suspicious') {
+        let alertQ = supabase.from('live_alerts').select('*').gte('created_at', cutoff).order('created_at', { ascending: false }).limit(200);
+        if (logFilters.sourceIP) alertQ = alertQ.ilike('source_ip', `%${logFilters.sourceIP}%`);
+        if (logFilters.destinationIP) alertQ = alertQ.ilike('destination_ip', `%${logFilters.destinationIP}%`);
+        if (logFilters.category === 'c2') alertQ = alertQ.ilike('alert_type', '%C2%');
+        if (logFilters.category === 'dns') alertQ = alertQ.ilike('alert_type', '%DNS%');
+
+        const { data: alerts } = await alertQ;
+        alerts?.forEach((a: any) => combined.push({ id: a.id, table: 'live_alerts', timestamp: a.created_at, source_ip: a.source_ip, destination_ip: a.destination_ip, severity: a.severity, alert_type: a.alert_type, description: a.description }));
+      }
+
+      combined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setLogResults(combined);
+      toast.success(`Log search: ${combined.length} results`);
+    } catch (e) { toast.error('Log search failed: ' + String(e)); }
+    setLogLoading(false);
+  }, [logFilters]);
+
   // Run an advanced hunt client-side using existing DB data
   const runAdvancedHunt = useCallback(async (huntType: string) => {
     setAdvancedLoading(huntType);
