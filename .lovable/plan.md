@@ -1,62 +1,62 @@
 
 
-# Move ML Training to Web Worker
+# Attack Timeline Builder — Implementation Plan
 
-## Problem
-ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
+## Purpose
 
-## Solution
-Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
+Reconstruct attack sequences per source IP by correlating alerts, incidents, and hunt results into a chronological timeline. Analysts see the full kill chain: port scan -> exploit -> beacon -> exfiltration.
 
-```text
-UI Thread                    Web Worker
-   │                            │
-   ├─ postMessage({algorithm}) ──►
-   │                            ├─ generateSyntheticData()
-   │  ◄── progress(30%) ───────┤
-   │                            ├─ preprocessData()
-   │  ◄── progress(60%) ───────┤
-   │                            ├─ trainModel()
-   │  ◄── progress(90%) ───────┤
-   │                            ├─ calculateMetrics()
-   │  ◄── result({metrics}) ───┤
-   │                            │
-   ▼ Update UI + save to DB     ▼
-```
+## Plan
 
-## Files to Create
+### 1. Python Agent: `docs/attack_timeline_builder.py`
 
-### 1. `src/workers/mlTraining.worker.ts`
-A self-contained Web Worker that:
-- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
-- Contains data generation, normalization, SMOTE, feature extraction logic
-- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
-- Listens for `{ type: 'train', algorithm }` messages
-- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
+- Queries `live_alerts`, `scored_incidents`, and `hunt_results` for a given source IP
+- Orders events chronologically and maps each to a kill chain phase (reconnaissance, exploitation, command-and-control, exfiltration, etc.)
+- Detects multi-stage attack patterns (e.g., scan followed by exploit within 5 minutes)
+- Pushes assembled timelines to `ingest-traffic` as `attack_timelines[]`
 
-**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
+### 2. Database: `attack_timelines` Table
 
-### 2. `src/hooks/useMLWorker.ts`
-A hook that:
-- Creates/manages the Worker instance
-- Exposes `trainInWorker(algorithm)` returning a Promise
-- Forwards progress updates to a callback
-- Handles cleanup on unmount
+| Column | Type |
+|--------|------|
+| id | uuid (PK) |
+| source_ip | text |
+| timeline_events | jsonb (array of {timestamp, event_type, phase, description, severity, ref_id}) |
+| kill_chain_phases | jsonb (detected phases) |
+| total_events | integer |
+| first_event_at | timestamptz |
+| last_event_at | timestamptz |
+| is_active | boolean (default true) |
+| created_at / updated_at | timestamptz |
 
-## Files to Modify
+RLS: full public access (matches project pattern).
 
-### 3. `src/components/MLModelManager.tsx`
-- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
-- `trainNewModel` sends work to the worker, receives metrics back
-- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
-- Progress bar driven by worker progress messages
+### 3. Modify `ingest-traffic` Edge Function
 
-### 4. `src/hooks/useMLPipeline.ts`
-- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
-- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
+- Accept optional `attack_timelines[]` payload
+- Upsert by `source_ip` (merge events, update timestamps)
 
-## Technical Notes
-- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
-- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
-- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
+### 4. UI: `src/components/AttackTimeline.tsx`
+
+- Vertical timeline visualization showing events in chronological order
+- Each event shows: time, type, phase badge (color-coded by kill chain stage), description
+- Filter by source IP dropdown
+- Kill chain progress bar showing which phases were detected
+- "Build Timeline" button that assembles timeline client-side from `live_alerts` + `scored_incidents` + `hunt_results` for a selected IP
+- Summary cards: total attacks tracked, active timelines, most advanced kill chain
+
+### 5. Add "Timeline" Tab to Dashboard
+
+- New tab trigger in `src/pages/Index.tsx`
+- New `TabsContent` rendering `AttackTimeline`
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Create** | `docs/attack_timeline_builder.py` |
+| **Create** | `src/components/AttackTimeline.tsx` |
+| **Modify** | `supabase/functions/ingest-traffic/index.ts` — accept `attack_timelines[]` |
+| **Modify** | `src/pages/Index.tsx` — add Timeline tab |
+| **Migration** | Create `attack_timelines` table |
 
