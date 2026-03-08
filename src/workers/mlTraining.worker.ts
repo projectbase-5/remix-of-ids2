@@ -186,18 +186,28 @@ function calculateMetrics(trueLabels: string[], predictions: string[]) {
 // ---- Main handler ----
 
 self.onmessage = (e: MessageEvent) => {
-  const { type, algorithm } = e.data;
+  const { type, algorithm, trainingData } = e.data;
   if (type !== 'train') return;
 
   try {
-    // Step 1: Generate data
-    self.postMessage({ type: 'progress', value: 10, stage: 'Generating data...' });
-    const rawData = generateSyntheticData();
+    let features: number[][];
+    let labels: string[];
 
-    // Step 2: Extract & normalize
+    if (trainingData && trainingData.features && trainingData.features.length > 0) {
+      // Use real training data passed from main thread
+      self.postMessage({ type: 'progress', value: 10, stage: 'Using live data...' });
+      features = trainingData.features;
+      labels = trainingData.labels;
+    } else {
+      // Fall back to synthetic data generation
+      self.postMessage({ type: 'progress', value: 10, stage: 'Generating synthetic data...' });
+      const rawData = generateSyntheticData();
+      features = rawData.map(d => extractFeatureVector(d.features));
+      labels = rawData.map(d => d.label);
+    }
+
+    // Step 2: Normalize
     self.postMessage({ type: 'progress', value: 25, stage: 'Preprocessing...' });
-    const features = rawData.map(d => extractFeatureVector(d.features));
-    const labels = rawData.map(d => d.label);
     let normalized = normalizeFeatures(features);
 
     // Step 3: PCA

@@ -59,7 +59,7 @@ export const useMLWorker = () => {
     return worker;
   }, []);
 
-  const trainInWorker = useCallback((algorithm: string): Promise<WorkerResult> => {
+  const trainInWorker = useCallback((algorithm: string, trainingData?: { features: number[][]; labels: string[] }): Promise<WorkerResult> => {
     return new Promise((resolve, reject) => {
       resolveRef.current = resolve;
       rejectRef.current = reject;
@@ -69,7 +69,7 @@ export const useMLWorker = () => {
       workerRef.current?.terminate();
       const worker = createWorker();
       workerRef.current = worker;
-      worker.postMessage({ type: 'train', algorithm });
+      worker.postMessage({ type: 'train', algorithm, trainingData });
     });
   }, [createWorker]);
 
