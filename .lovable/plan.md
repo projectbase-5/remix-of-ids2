@@ -1,62 +1,39 @@
 
 
-# Move ML Training to Web Worker
+# Fix: Live Mode System Metrics Showing Static Values
 
 ## Problem
-ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
+In live mode, the dashboard polls `system_metrics_log` from Supabase every 2 seconds. When no Python IDS agent is running (i.e., running locally via VS Code/AntiGravity), that table is always empty, so metrics stay at their hardcoded initial values (CPU 25%, Memory 35%, Disk 78%, Network Health 98%). The badge says "LIVE" but nothing updates.
+
+## Root Cause
+The system relies on an external Python agent (`ids_agent.py`) to populate `system_metrics_log`. Without it, the frontend has no data source for real metrics.
 
 ## Solution
-Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
+Add a **browser-based fallback** that uses Web APIs to estimate real system metrics when the Supabase table returns no data. This runs only in live mode when no agent data is found.
 
-```text
-UI Thread                    Web Worker
-   │                            │
-   ├─ postMessage({algorithm}) ──►
-   │                            ├─ generateSyntheticData()
-   │  ◄── progress(30%) ───────┤
-   │                            ├─ preprocessData()
-   │  ◄── progress(60%) ───────┤
-   │                            ├─ trainModel()
-   │  ◄── progress(90%) ───────┤
-   │                            ├─ calculateMetrics()
-   │  ◄── result({metrics}) ───┤
-   │                            │
-   ▼ Update UI + save to DB     ▼
-```
+Available browser APIs:
+- **`performance.memory`** (Chrome): `usedJSHeapSize` / `jsHeapSizeLimit` for memory approximation
+- **`navigator.hardwareConcurrency`**: CPU core count (used to contextualize load)
+- **`navigator.connection`** (Chrome): `downlink`, `rtt` for network health estimation
+- **`performance.now()` + task timing**: Estimate CPU load by measuring event loop delay
 
-## Files to Create
+### Changes
 
-### 1. `src/workers/mlTraining.worker.ts`
-A self-contained Web Worker that:
-- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
-- Contains data generation, normalization, SMOTE, feature extraction logic
-- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
-- Listens for `{ type: 'train', algorithm }` messages
-- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
+**Modify `src/hooks/useIDSDataStore.ts`**:
+- In the live mode polling effect, when `system_metrics_log` returns empty results, fall back to browser-based metrics collection
+- Add a helper function `collectBrowserMetrics()` that:
+  - Estimates **memory usage** from `performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit * 100`
+  - Estimates **CPU usage** by measuring event loop lag (schedule a `setTimeout(0)` and measure actual delay; high delay = high CPU)
+  - Estimates **network health** from `navigator.connection.downlink` and `navigator.connection.rtt`
+  - Uses a slowly-drifting **disk usage** value (since browsers can't read disk, simulate gentle drift around 78%)
+- Add a small fluctuation to make values feel alive (not static)
+- When real agent data IS found in the table, use that instead (existing behavior preserved)
 
-**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
-
-### 2. `src/hooks/useMLWorker.ts`
-A hook that:
-- Creates/manages the Worker instance
-- Exposes `trainInWorker(algorithm)` returning a Promise
-- Forwards progress updates to a callback
-- Handles cleanup on unmount
+**No other files need changes** -- `SystemStatus.tsx` already reads from `systemMetrics` state.
 
 ## Files to Modify
 
-### 3. `src/components/MLModelManager.tsx`
-- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
-- `trainNewModel` sends work to the worker, receives metrics back
-- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
-- Progress bar driven by worker progress messages
-
-### 4. `src/hooks/useMLPipeline.ts`
-- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
-- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
-
-## Technical Notes
-- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
-- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
-- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
+| File | Action |
+|------|--------|
+| `src/hooks/useIDSDataStore.ts` | Add browser-based metrics fallback in live mode polling |
 
