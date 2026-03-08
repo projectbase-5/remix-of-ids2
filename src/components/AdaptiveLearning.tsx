@@ -110,40 +110,12 @@ const AdaptiveLearning: React.FC = () => {
     }
   };
 
-  const simulateDriftDetection = () => {
-    // Simulate periodic drift detection
-    const interval = setInterval(() => {
-      if (Math.random() > 0.7) { // 30% chance of drift detection
-        const metrics = ['accuracy', 'precision', 'recall', 'f1_score'];
-        const metric = metrics[Math.floor(Math.random() * metrics.length)];
-        const currentValue = 0.85 + Math.random() * 0.1;
-        const baselineValue = 0.9;
-        const driftScore = Math.abs(currentValue - baselineValue);
-        
-        if (driftScore > activeConfig.drift_threshold) {
-          const detection: DriftDetection = {
-            timestamp: new Date(),
-            metric,
-            current_value: currentValue,
-            baseline_value: baselineValue,
-            drift_score: driftScore,
-            action_taken: driftScore > 0.1 ? 'Model Retrained' : 'Parameter Adjusted'
-          };
-          
-          setDriftDetections(prev => [detection, ...prev.slice(0, 19)]);
-          
-          // Update model performance
-          setModelPerformance(prev => ({
-            ...prev,
-            currentAccuracy: currentValue * 100,
-            adaptationCount: prev.adaptationCount + 1,
-            lastUpdate: new Date()
-          }));
-        }
-      }
-    }, 10000); // Check every 10 seconds for demo
-
-    return () => clearInterval(interval);
+  const handleRetrain = async () => {
+    try {
+      await retrainOnLiveData('RandomForest');
+    } catch (e) {
+      console.error('Retrain failed:', e);
+    }
   };
 
   const getEnvironmentIcon = (type: string) => {
