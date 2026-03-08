@@ -5,14 +5,8 @@
  * threat detections, security alerts, system metrics, and traffic chart data.
  *
  * Two operating modes:
- *   • Demo mode (default) — generates synthetic metrics locally.
- *   • Live mode — polls Supabase tables (`network_traffic`, `live_alerts`,
- *     `system_metrics_log`) every 2 seconds for real data sent by the
- *     Python IDS agent via the `ingest-traffic` edge function.
- *
- * Alert flow (live mode):
- *   Python agent → edge function → `live_alerts` table → this hook polls
- *   → converts rows to SecurityAlert / ThreatDetection → shows toast.
+ *   - Demo mode (default) — generates synthetic metrics locally.
+ *   - Live mode — polls Supabase tables every 2 seconds for real data.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
