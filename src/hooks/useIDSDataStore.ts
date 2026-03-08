@@ -83,7 +83,7 @@ export const useIDSDataStore = () => {
   const [networkEvents, setNetworkEvents] = useState<NetworkEvent[]>([]);
   const [threats, setThreats] = useState<ThreatDetection[]>([]);
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
-  const [isDemoMode, setIsDemoMode] = useState(true);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(true);
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics>({
     cpuUsage: 25,
