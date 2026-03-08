@@ -263,6 +263,14 @@ const Index = () => {
           <TabsContent value="hunt">
             <ThreatHunter />
           </TabsContent>
+
+          <TabsContent value="topology">
+            <NetworkTopology />
+          </TabsContent>
+
+          <TabsContent value="retention">
+            <DataRetention />
+          </TabsContent>
         </Tabs>
       </main>
     </div>;
