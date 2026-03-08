@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Zap, Shield, AlertTriangle, CheckCircle, Brain, Activity } from 'lucide-react';
 import { useMLPipeline, MLFeatures } from '@/hooks/useMLPipeline';
 import { useIDSDataStore, NetworkEvent } from '@/hooks/useIDSDataStore';
+import { extractFeaturesFromEvent } from '@/hooks/useNetworkFeatureExtractor';
 import { supabase } from '@/integrations/supabase/client';
 
 interface PredictionResult {
