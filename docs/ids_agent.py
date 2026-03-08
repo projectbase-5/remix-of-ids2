@@ -1,6 +1,6 @@
 """
-IDS Real-Time Agent — Port Scan, DoS & Flow Anomaly Detection
-==============================================================
+IDS Real-Time Agent — Full Pipeline
+=====================================
 Main entry point for the local IDS agent.
 
 Architecture:
@@ -9,17 +9,23 @@ Architecture:
        - PortScanDetector  (15+ unique ports in 10 s)
        - DoSDetector       (100+ pps or 3x traffic spike, burst/sustained)
        - FlowAggregator    (per-flow statistics + anomaly detection)
+       - MalwareBehaviorDetector (C2 beaconing, lateral movement, exfil)
     3. Every SEND_INTERVAL seconds the main loop:
        a) Drains the packet queue
        b) Calls ``check()`` on each detector to harvest alerts
        c) Calls ``detect_anomalies()`` on FlowAggregator
        d) Evaluates regex rules against payload previews
-       e) Passes alerts through AlertManager for 60-s deduplication
-       f) POSTs packets, alerts, flow summaries, and system metrics
+       e) Enriches alerts with threat intelligence (IP reputation)
+       f) Passes alerts through AlertManager for 60-s deduplication
+       g) Updates asset discovery from observed packets
+       h) POSTs packets, alerts, flow summaries, and system metrics
           to the ``ingest-traffic`` Supabase edge function
     4. Every RULE_REFRESH_INTERVAL seconds, detection rules are
-       fetched from the Supabase ``detection_rules`` table and
-       detector thresholds are updated dynamically.
+       fetched from the Supabase ``detection_rules`` table.
+    5. Every RISK_SCORING_INTERVAL seconds, host risk scores are
+       recomputed and pushed to the database.
+    6. High-severity alerts trigger automated response actions and
+       multi-channel notifications.
 
 Prerequisites:
     pip install scapy psutil requests
@@ -37,6 +43,7 @@ import time
 import hashlib
 import threading
 import queue
+import logging
 import psutil
 
 try:
@@ -51,6 +58,13 @@ from flow_aggregator import FlowAggregator
 from malware_behavior_detector import MalwareBehaviorDetector
 from alert_manager import AlertManager
 from rule_fetcher import RuleFetcher
+from threat_intel_enricher import ThreatIntelEnricher
+from asset_discovery import AssetDiscovery
+from response_manager import ResponseManager
+from notification_dispatcher import NotificationDispatcher, NotificationPayload
+from risk_scoring_engine import compute_host_risk_scores, compute_network_risk, push_risk_scores
+
+logger = logging.getLogger("ids_agent")
 
 # ============================================================
 # CONFIGURATION — Update these values or set env vars
@@ -58,35 +72,42 @@ from rule_fetcher import RuleFetcher
 SUPABASE_URL = os.environ.get(
     "SUPABASE_URL", "https://saeofugyscjfgqqnqowk.supabase.co"
 )
+SUPABASE_KEY = os.environ.get(
+    "SUPABASE_ANON_KEY", "YOUR_SUPABASE_ANON_KEY"
+)
 EDGE_FUNCTION_URL = f"{SUPABASE_URL}/functions/v1/ingest-traffic"
 AGENT_API_KEY = os.environ.get(
     "AGENT_API_KEY", "REPLACE_WITH_YOUR_SECRET_KEY"
 )
-SEND_INTERVAL = 2  # seconds between batch sends to Supabase
-RULE_REFRESH_INTERVAL = 30  # seconds between rule refreshes
+SEND_INTERVAL = 2            # seconds between batch sends
+RULE_REFRESH_INTERVAL = 30   # seconds between rule refreshes
+RISK_SCORING_INTERVAL = 300  # seconds between risk score recalculations
 # ============================================================
 
 # Thread-safe queue holding parsed packet dicts until the next send cycle.
 packet_queue = queue.Queue(maxsize=500)
 
-# Instantiate detection modules with their thresholds
+# ---------------------------------------------------------------------------
+# Detection modules
+# ---------------------------------------------------------------------------
 port_scan_detector = PortScanDetector(threshold=15, window_seconds=10)
 dos_detector = DoSDetector(pps_threshold=100, window_seconds=10)
 flow_aggregator = FlowAggregator(window_seconds=10)
 malware_detector = MalwareBehaviorDetector(window_seconds=60)
 
-# AlertManager handles 60-second deduplication and HTTP dispatch
-alert_manager = AlertManager(
-    edge_function_url=EDGE_FUNCTION_URL,
-    api_key=AGENT_API_KEY,
-    dedup_window=60,
-)
+# ---------------------------------------------------------------------------
+# Pipeline modules (instantiated in main() with real credentials)
+# ---------------------------------------------------------------------------
+alert_manager = None
+rule_fetcher = None
+threat_enricher = None
+asset_discovery = None
+response_manager = None
+notification_dispatcher = None
 
-# Rule fetcher for dynamic rule sync from Supabase
-rule_fetcher = RuleFetcher(SUPABASE_URL)
+# State
 last_rule_refresh = 0.0
-
-# Active regex rules (populated by refresh_rules)
+last_risk_scoring = 0.0
 active_regex_rules = []
 
 
@@ -150,6 +171,7 @@ def evaluate_regex_rules(packet_data):
                     "alert_type": "Regex Match",
                     "severity": rule.get("severity", "medium"),
                     "source_ip": packet_data.get("source_ip", "0.0.0.0"),
+                    "destination_ip": packet_data.get("destination_ip", ""),
                     "description": (
                         f"Regex rule '{rule['name']}' matched payload from "
                         f"{packet_data.get('source_ip', '?')} → "
@@ -165,7 +187,6 @@ def evaluate_regex_rules(packet_data):
                     },
                 })
         except re.error:
-            # Skip invalid regex silently (already validated in fetcher)
             pass
 
     return alerts
@@ -174,9 +195,7 @@ def evaluate_regex_rules(packet_data):
 def packet_callback(packet):
     """
     Scapy callback — invoked for every captured IP packet.
-
-    Extracts source/dest IPs, protocol, port, flags, payload preview,
-    then feeds the dict to each detector and enqueues it for batch sending.
+    Extracts fields, feeds to detectors, enqueues for batch sending.
     """
     if IP not in packet:
         return
@@ -263,10 +282,68 @@ def get_system_metrics():
     }
 
 
+def run_risk_scoring():
+    """Compute and push host risk scores (periodic task)."""
+    global last_risk_scoring
+    try:
+        scores = compute_host_risk_scores()
+        network_risk = compute_network_risk(scores)
+        push_risk_scores(scores)
+        print(f"[RISK] Scored {len(scores)} hosts | Network risk: {network_risk}")
+        last_risk_scoring = time.time()
+    except Exception as e:
+        print(f"[!] Risk scoring failed: {e}")
+
+
+def handle_high_severity_alerts(alerts):
+    """
+    For high/critical alerts, trigger automated response and notifications.
+    """
+    for alert in alerts:
+        severity = alert.get("severity", "low")
+        if severity not in ("high", "critical"):
+            continue
+
+        source_ip = alert.get("source_ip", "unknown")
+        alert_type = alert.get("alert_type", "Unknown")
+        description = alert.get("description", "")
+
+        # --- Automated Response ---
+        if response_manager:
+            incident_data = {
+                "source_ip": source_ip,
+                "total_score": 100 if severity == "critical" else 50,
+                "attack_types": [alert_type],
+            }
+            try:
+                actions = response_manager.auto_respond(incident_data)
+                if actions:
+                    print(f"[RESPONSE] {source_ip}: {', '.join(actions)}")
+            except Exception as e:
+                logger.error(f"Auto-response failed: {e}")
+
+        # --- Notification Dispatch ---
+        if notification_dispatcher:
+            try:
+                payload = NotificationPayload(
+                    alert_type=alert_type,
+                    severity=severity,
+                    source_ip=source_ip,
+                    description=description,
+                    timestamp=time.time(),
+                    score=100 if severity == "critical" else 50,
+                )
+                result = notification_dispatcher.dispatch(payload)
+                if result and "skipped" not in result:
+                    print(f"[NOTIFY] Dispatched for {source_ip}: {list(result.keys())}")
+            except Exception as e:
+                logger.error(f"Notification dispatch failed: {e}")
+
+
 def send_batch():
     """
-    Drain the packet queue, run detectors, and POST everything to
-    the edge function in a single HTTP request.
+    Drain the packet queue, run full pipeline:
+    detect → enrich → dedup → respond → notify → send to DB.
     """
     import requests as req_lib
 
@@ -279,34 +356,71 @@ def send_batch():
         except queue.Empty:
             break
 
-    # Harvest alerts from all detectors
+    # ---------------------------------------------------------------
+    # 1. Harvest alerts from all detectors
+    # ---------------------------------------------------------------
     all_alerts = []
     all_alerts.extend(port_scan_detector.check())
     all_alerts.extend(dos_detector.check())
     all_alerts.extend(flow_aggregator.detect_anomalies())
 
-    # Malware behavior detection (uses flow summaries)
+    # Malware behavior detection
     current_flows = flow_aggregator.get_flows()
     all_alerts.extend(malware_detector.check(current_flows))
 
-    # Evaluate regex rules against packets with payloads
+    # Regex rules against packets with payloads
     for pkt in packets:
         all_alerts.extend(evaluate_regex_rules(pkt))
 
-    # Deduplicate and send alerts
+    # ---------------------------------------------------------------
+    # 2. Enrich alerts with threat intelligence
+    # ---------------------------------------------------------------
+    if threat_enricher and all_alerts:
+        try:
+            all_alerts = threat_enricher.enrich(all_alerts)
+        except Exception as e:
+            logger.error(f"Threat enrichment failed: {e}")
+
+    # ---------------------------------------------------------------
+    # 3. Deduplicate and send alerts to DB
+    # ---------------------------------------------------------------
     sent_count = 0
     if all_alerts:
         sent_count = alert_manager.process(all_alerts)
 
+    # ---------------------------------------------------------------
+    # 4. Trigger automated response + notifications for severe alerts
+    # ---------------------------------------------------------------
+    if all_alerts:
+        handle_high_severity_alerts(all_alerts)
+
+    # ---------------------------------------------------------------
+    # 5. Asset discovery — track IPs from packets
+    # ---------------------------------------------------------------
+    if asset_discovery and packets:
+        try:
+            new_assets = asset_discovery.update(packets)
+            if new_assets > 0:
+                print(f"[ASSET] Discovered {new_assets} new host(s)")
+        except Exception as e:
+            logger.error(f"Asset discovery failed: {e}")
+
+    # ---------------------------------------------------------------
+    # 6. Periodic risk scoring
+    # ---------------------------------------------------------------
+    if time.time() - last_risk_scoring >= RISK_SCORING_INTERVAL:
+        run_risk_scoring()
+
+    # ---------------------------------------------------------------
+    # 7. Send packets + metrics to edge function
+    # ---------------------------------------------------------------
     metrics = get_system_metrics()
 
-    # Prepare packets for sending (strip internal fields)
     send_packets = []
     for pkt in packets:
         send_pkt = {k: v for k, v in pkt.items() if k != "timestamp"}
         send_packets.append(send_pkt)
 
-    # Get flow summaries for persistence
     flow_summaries = flow_aggregator.get_flow_summaries()
 
     payload = {
@@ -335,8 +449,10 @@ def send_batch():
 
 
 def main():
-    """Entry point — validate config, start sniffer thread, loop forever."""
-    global last_rule_refresh
+    """Entry point — validate config, initialise all modules, start sniffer, loop."""
+    global alert_manager, rule_fetcher, threat_enricher, asset_discovery
+    global response_manager, notification_dispatcher
+    global last_rule_refresh, last_risk_scoring
 
     if AGENT_API_KEY == "REPLACE_WITH_YOUR_SECRET_KEY":
         print("ERROR: Set AGENT_API_KEY before running.")
@@ -344,25 +460,65 @@ def main():
         print("       It must match the AGENT_API_KEY secret in your Supabase project.")
         exit(1)
 
+    # --- Initialise pipeline modules ---
+    alert_manager = AlertManager(
+        edge_function_url=EDGE_FUNCTION_URL,
+        api_key=AGENT_API_KEY,
+        dedup_window=60,
+    )
+
+    rule_fetcher = RuleFetcher(SUPABASE_URL)
+
+    threat_enricher = ThreatIntelEnricher(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        cache_ttl=300,
+    )
+
+    asset_discovery = AssetDiscovery(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        sync_interval=60,
+    )
+
+    response_manager = ResponseManager(
+        supabase_url=SUPABASE_URL,
+        api_key=AGENT_API_KEY,
+        dry_run=True,  # Set to False in production
+        auto_block_threshold=80,
+        auto_isolate_threshold=120,
+    )
+
+    notification_dispatcher = NotificationDispatcher(
+        supabase_url=SUPABASE_URL,
+        supabase_key=SUPABASE_KEY,
+        rate_limit=30,
+        dedupe_window=60,
+    )
+
     print("=" * 60)
-    print("  IDS Real-Time Agent v2")
-    print("  Port Scan + DoS (burst/sustained) + Flow Anomaly")
-    print("  + Dynamic Rule Sync + Regex Engine")
+    print("  IDS Real-Time Agent v3 — Full Pipeline")
+    print("  Detection → Enrichment → Response → Notification")
     print("=" * 60)
     print(f"  Endpoint      : {EDGE_FUNCTION_URL}")
     print(f"  Send interval : {SEND_INTERVAL}s")
     print(f"  Rule refresh  : {RULE_REFRESH_INTERVAL}s")
+    print(f"  Risk scoring  : {RISK_SCORING_INTERVAL}s")
     print(f"  Port scan     : >{port_scan_detector.threshold} ports in {port_scan_detector.window_seconds}s")
     print(f"  DoS flood     : >{dos_detector.pps_threshold} pps")
     print(f"  Flow fanout   : >{flow_aggregator.fanout_threshold} destinations")
-    print(f"  Malware C2    : >{malware_detector.beacon_min_connections} conns, std<{malware_detector.beacon_max_interval_std}s")
-    print(f"  Lateral move  : >{malware_detector.lateral_min_targets} internal targets")
-    print(f"  Exfiltration  : >{malware_detector.exfil_byte_threshold / 1024:.0f} KB")
+    print(f"  Malware C2    : >{malware_detector.beacon_min_connections} conns")
+    print(f"  Response      : dry_run={response_manager.dry_run}")
+    print("  Modules       : Enricher ✓ | Assets ✓ | Risk ✓ | Response ✓ | Notify ✓")
     print("=" * 60)
 
     # Initial rule fetch
     print("[*] Fetching detection rules from Supabase...")
     refresh_rules()
+
+    # Initial risk scoring
+    print("[*] Running initial risk scoring...")
+    run_risk_scoring()
 
     # Start packet capture
     sniffer_thread = threading.Thread(target=start_sniffing, daemon=True)
@@ -379,8 +535,19 @@ def main():
             if time.time() - last_rule_refresh >= RULE_REFRESH_INTERVAL:
                 refresh_rules()
     except KeyboardInterrupt:
-        print("\n[*] Stopped.")
+        # Print final stats
+        print("\n" + "=" * 60)
+        print("  Agent Stopped — Final Statistics")
+        print("=" * 60)
+        if threat_enricher:
+            print(f"  Enricher : {threat_enricher.get_stats()}")
+        if asset_discovery:
+            print(f"  Assets   : {asset_discovery.get_stats()}")
+        if notification_dispatcher:
+            print(f"  Notify   : {notification_dispatcher.get_stats()}")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     main()
