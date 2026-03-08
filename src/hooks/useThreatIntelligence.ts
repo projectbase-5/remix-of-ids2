@@ -325,6 +325,7 @@ export function useThreatIntelligence() {
     loading,
     checking,
     checkIPReputation,
+    enrichAlert,
     scanFileHash,
     addMalwareSignature,
     addIPReputation,
