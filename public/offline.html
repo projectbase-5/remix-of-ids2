@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline - IDS Dashboard</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: #E2E8F0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      text-align: center;
+      max-width: 500px;
+    }
+    
+    .icon {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 30px;
+      background: linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 60px;
+      box-shadow: 0 10px 40px rgba(59, 130, 246, 0.3);
+    }
+    
+    h1 {
+      font-size: 32px;
+      margin-bottom: 15px;
+      font-weight: 700;
+    }
+    
+    p {
+      font-size: 18px;
+      color: #94A3B8;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    
+    button {
+      background: linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%);
+      color: white;
+      border: none;
+      padding: 15px 40px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    .status {
+      display: inline-block;
+      margin-top: 20px;
+      padding: 8px 16px;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 20px;
+      color: #F87171;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    
+    .status.online {
+      background: rgba(34, 197, 94, 0.1);
+      border-color: rgba(34, 197, 94, 0.3);
+      color: #4ADE80;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>You're Offline</h1>
+    <p>
+      Your connection is currently unavailable. The IDS Dashboard requires an internet connection to load network data and monitoring features.
+    </p>
+    <button onclick="window.location.reload()">Try Again</button>
+    <div class="status" id="status">Offline Mode</div>
+  </div>
+
+  <script>
+    // Monitor connection status
+    function updateStatus() {
+      const status = document.getElementById('status');
+      if (navigator.onLine) {
+        status.textContent = 'Back Online - Refreshing...';
+        status.classList.add('online');
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        status.textContent = 'Offline Mode';
+        status.classList.remove('online');
+      }
+    }
+
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    updateStatus();
+  </script>
+</body>
+</html>
