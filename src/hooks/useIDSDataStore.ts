@@ -456,6 +456,19 @@ export const useIDSDataStore = () => {
       setNetworkEvents([]);
       setThreats([]);
       setAlerts([]);
+      // Reset traffic chart to empty time slots
+      const resetData: TrafficData[] = [];
+      for (let i = 19; i >= 0; i--) {
+        const time = new Date(Date.now() - i * 2000);
+        resetData.push({
+          time: time.toLocaleTimeString(),
+          inbound: 0,
+          outbound: 0,
+          threats: 0,
+          events: 0,
+        });
+      }
+      setTrafficData(resetData);
       setSystemMetrics(prev => ({
         ...prev,
         packetsProcessed: 0,
