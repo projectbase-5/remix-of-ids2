@@ -21,6 +21,34 @@ interface HuntResult {
   score?: number;
 }
 
+interface LogSearchFilters {
+  sourceIP: string;
+  destinationIP: string;
+  protocol: string;
+  port: string;
+  payloadKeyword: string;
+  category: string;
+  timeRange: string;
+}
+
+interface LogResult {
+  id: string;
+  table: string;
+  timestamp: string;
+  source_ip: string;
+  destination_ip?: string;
+  protocol?: string;
+  port?: number;
+  packet_size?: number;
+  payload_preview?: string;
+  is_suspicious?: boolean;
+  severity?: string;
+  alert_type?: string;
+  description?: string;
+}
+
+const DEFAULT_LOG_FILTERS: LogSearchFilters = { sourceIP: '', destinationIP: '', protocol: 'all', port: '', payloadKeyword: '', category: 'all', timeRange: '24h' };
+
 interface AdvancedHuntResult {
   id: string;
   hunt_type: string;
