@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AlertTriangle, TrendingUp, Wifi, Smartphone, Server, Cloud, Settings } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Wifi, Smartphone, Server, Cloud, Settings, RefreshCw } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useModelUpdatePipeline } from '@/hooks/useModelUpdatePipeline';
 
 interface AdaptiveConfig {
   id?: string;
@@ -35,6 +36,8 @@ interface DriftDetection {
 }
 
 const AdaptiveLearning: React.FC = () => {
+  const { driftStats, isRetraining, retrainProgress, retrainOnLiveData, checkDrift } = useModelUpdatePipeline();
+
   const [activeConfig, setActiveConfig] = useState<AdaptiveConfig>({
     environment_type: 'Cloud',
     resource_constraints: { memory: 2048, cpu: 80, bandwidth: 1000 },
@@ -48,16 +51,34 @@ const AdaptiveLearning: React.FC = () => {
   const [savedConfigs, setSavedConfigs] = useState<AdaptiveConfig[]>([]);
   const [driftDetections, setDriftDetections] = useState<DriftDetection[]>([]);
   const [modelPerformance, setModelPerformance] = useState({
-    currentAccuracy: 94.2,
-    baseline: 92.8,
-    adaptationCount: 15,
-    lastUpdate: new Date()
+    currentAccuracy: 0,
+    baseline: 0,
+    adaptationCount: 0,
+    lastUpdate: driftStats.lastRetrained || new Date()
   });
 
   useEffect(() => {
     fetchAdaptiveConfigs();
-    simulateDriftDetection();
   }, []);
+
+  // Update performance stats from real drift data
+  useEffect(() => {
+    if (driftStats.isDrifting) {
+      const detection: DriftDetection = {
+        timestamp: driftStats.lastChecked || new Date(),
+        metric: 'prediction_distribution',
+        current_value: 1 - driftStats.driftScore,
+        baseline_value: 1,
+        drift_score: driftStats.driftScore,
+        action_taken: driftStats.driftScore > 0.1 ? 'Retraining Recommended' : 'Monitoring'
+      };
+      setDriftDetections(prev => [detection, ...prev.slice(0, 19)]);
+    }
+    setModelPerformance(prev => ({
+      ...prev,
+      lastUpdate: driftStats.lastRetrained || prev.lastUpdate,
+    }));
+  }, [driftStats.isDrifting, driftStats.driftScore, driftStats.lastChecked, driftStats.lastRetrained]);
 
   const fetchAdaptiveConfigs = async () => {
     try {
@@ -89,40 +110,12 @@ const AdaptiveLearning: React.FC = () => {
     }
   };
 
-  const simulateDriftDetection = () => {
-    // Simulate periodic drift detection
-    const interval = setInterval(() => {
-      if (Math.random() > 0.7) { // 30% chance of drift detection
-        const metrics = ['accuracy', 'precision', 'recall', 'f1_score'];
-        const metric = metrics[Math.floor(Math.random() * metrics.length)];
-        const currentValue = 0.85 + Math.random() * 0.1;
-        const baselineValue = 0.9;
-        const driftScore = Math.abs(currentValue - baselineValue);
-        
-        if (driftScore > activeConfig.drift_threshold) {
-          const detection: DriftDetection = {
-            timestamp: new Date(),
-            metric,
-            current_value: currentValue,
-            baseline_value: baselineValue,
-            drift_score: driftScore,
-            action_taken: driftScore > 0.1 ? 'Model Retrained' : 'Parameter Adjusted'
-          };
-          
-          setDriftDetections(prev => [detection, ...prev.slice(0, 19)]);
-          
-          // Update model performance
-          setModelPerformance(prev => ({
-            ...prev,
-            currentAccuracy: currentValue * 100,
-            adaptationCount: prev.adaptationCount + 1,
-            lastUpdate: new Date()
-          }));
-        }
-      }
-    }, 10000); // Check every 10 seconds for demo
-
-    return () => clearInterval(interval);
+  const handleRetrain = async () => {
+    try {
+      await retrainOnLiveData('RandomForest');
+    } catch (e) {
+      console.error('Retrain failed:', e);
+    }
   };
 
   const getEnvironmentIcon = (type: string) => {
@@ -332,6 +325,55 @@ const AdaptiveLearning: React.FC = () => {
             </TabsContent>
             
             <TabsContent value="drift" className="space-y-4">
+              {/* Drift Summary */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold">{(driftStats.driftScore * 100).toFixed(1)}%</div>
+                        <div className="text-sm text-muted-foreground">Drift Score</div>
+                      </div>
+                      <Badge variant={driftStats.isDrifting ? 'destructive' : 'default'}>
+                        {driftStats.isDrifting ? 'Drift Detected' : 'Stable'}
+                      </Badge>
+                      {driftStats.lastRetrained && (
+                        <div className="text-sm text-muted-foreground">
+                          Last retrained: {driftStats.lastRetrained.toLocaleString()}
+                        </div>
+                      )}
+                      <div className="text-sm text-muted-foreground">
+                        Pending feedback: {driftStats.pendingFeedbackCount}
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => checkDrift(activeConfig.drift_threshold)}
+                      >
+                        Check Now
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleRetrain}
+                        disabled={isRetraining}
+                        className="flex items-center space-x-1"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${isRetraining ? 'animate-spin' : ''}`} />
+                        <span>{isRetraining ? 'Retraining...' : 'Retrain Now'}</span>
+                      </Button>
+                    </div>
+                  </div>
+                  {isRetraining && (
+                    <div className="mt-3">
+                      <Progress value={retrainProgress.value} className="h-2" />
+                      <div className="text-xs text-muted-foreground mt-1">{retrainProgress.stage}</div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Concept Drift Detection</CardTitle>

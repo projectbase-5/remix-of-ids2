@@ -6,9 +6,10 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Brain, Play, Pause, BarChart3, Settings, TrendingUp, Shield, Download, XCircle } from 'lucide-react';
+import { Brain, Play, Pause, BarChart3, Settings, TrendingUp, Shield, Download, XCircle, Database } from 'lucide-react';
 import { useMLPipeline, MLModel } from '@/hooks/useMLPipeline';
 import { useMLWorker } from '@/hooks/useMLWorker';
+import { useModelUpdatePipeline } from '@/hooks/useModelUpdatePipeline';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { ModelEvaluationDashboard } from './ModelEvaluationDashboard';
@@ -20,16 +21,19 @@ interface MLModelManagerProps {
 const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
   const mlPipeline = useMLPipeline();
   const { trainInWorker, cancelTraining, progress: workerProgress, isTraining: workerIsTraining } = useMLWorker();
+  const { retrainOnLiveData, isRetraining, retrainProgress } = useModelUpdatePipeline();
   const { toast } = useToast();
   const [trainingProgress, setTrainingProgress] = useState(0);
   const [selectedModel, setSelectedModel] = useState<MLModel | null>(null);
   const [dbModels, setDbModels] = useState<any[]>([]);
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [selectedEvaluation, setSelectedEvaluation] = useState<any>(null);
+  const [liveDataCount, setLiveDataCount] = useState(0);
 
   useEffect(() => {
     fetchModelsFromDatabase();
     fetchEvaluations();
+    fetchLiveDataCount();
   }, []);
 
   const fetchModelsFromDatabase = async () => {
@@ -63,19 +67,29 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
     }
   };
 
+  const fetchLiveDataCount = async () => {
+    try {
+      const { count } = await supabase
+        .from('training_data')
+        .select('*', { count: 'exact', head: true });
+      setLiveDataCount(count || 0);
+    } catch (e) {
+      console.error('Error fetching live data count:', e);
+    }
+  };
 
   // Sync worker progress to local state
   useEffect(() => {
-    if (workerIsTraining) {
-      setTrainingProgress(workerProgress.value);
+    if (workerIsTraining || isRetraining) {
+      setTrainingProgress(workerIsTraining ? workerProgress.value : retrainProgress.value);
     }
-  }, [workerProgress, workerIsTraining]);
+  }, [workerProgress, workerIsTraining, isRetraining, retrainProgress]);
 
   const trainNewModel = async (algorithm: 'RandomForest' | 'C4.5' | 'GBDT' | 'DT_SVM_Hybrid' = 'RandomForest') => {
     try {
       setTrainingProgress(5);
       
-      // Run all heavy work in the Web Worker
+      // Run all heavy work in the Web Worker (synthetic data)
       const result = await trainInWorker(algorithm);
       
       // Save to database on main thread (needs Supabase client)
@@ -84,7 +98,7 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
       setTrainingProgress(100);
       
       toast({
-        title: "Model Trained Successfully",
+        title: "Model Trained (Synthetic)",
         description: `${algorithm} model trained with ${(result.metrics.accuracy * 100).toFixed(2)}% accuracy`,
       });
       
@@ -105,6 +119,38 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
         toast({
           title: "Training Failed",
           description: "An error occurred during model training",
+          variant: "destructive",
+        });
+      }
+      setTrainingProgress(0);
+    }
+  };
+
+  const trainOnLiveData = async (algorithm: 'RandomForest' | 'C4.5' | 'GBDT' | 'DT_SVM_Hybrid' = 'RandomForest') => {
+    try {
+      setTrainingProgress(5);
+      const result = await retrainOnLiveData(algorithm);
+      setTrainingProgress(100);
+      
+      toast({
+        title: "Model Trained on Live Data",
+        description: `${algorithm} trained with ${(result.metrics.accuracy * 100).toFixed(2)}% accuracy using real data`,
+      });
+      
+      setTimeout(() => {
+        fetchModelsFromDatabase();
+        fetchEvaluations();
+        fetchLiveDataCount();
+        setTrainingProgress(0);
+      }, 1000);
+    } catch (error: any) {
+      if (error?.message === 'Training cancelled') {
+        toast({ title: "Training Cancelled", description: "Model training was cancelled" });
+      } else {
+        console.error('Error training on live data:', error);
+        toast({
+          title: "Live Training Failed",
+          description: error?.message || "An error occurred",
           variant: "destructive",
         });
       }
@@ -179,6 +225,16 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
                 variant="outline"
               >
                 DT+SVM
+              </Button>
+              <Separator orientation="vertical" className="h-8" />
+              <Button 
+                onClick={() => trainOnLiveData('RandomForest')} 
+                disabled={trainingProgress > 0}
+                variant="secondary"
+                className="flex items-center space-x-2"
+              >
+                <Database className="h-4 w-4" />
+                <span>Train on Live Data {liveDataCount > 0 && `(${liveDataCount})`}</span>
               </Button>
             </div>
             
