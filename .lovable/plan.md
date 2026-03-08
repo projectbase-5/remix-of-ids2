@@ -1,62 +1,75 @@
 
 
-# Move ML Training to Web Worker
+# Asset Inventory — Implementation Plan
 
-## Problem
-ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
+## Purpose
 
-## Solution
-Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
+Track and classify hosts on the network so alerts gain context. Instead of "alert from 192.168.1.10", analysts see "alert from Developer Laptop (192.168.1.10)".
 
-```text
-UI Thread                    Web Worker
-   │                            │
-   ├─ postMessage({algorithm}) ──►
-   │                            ├─ generateSyntheticData()
-   │  ◄── progress(30%) ───────┤
-   │                            ├─ preprocessData()
-   │  ◄── progress(60%) ───────┤
-   │                            ├─ trainModel()
-   │  ◄── progress(90%) ───────┤
-   │                            ├─ calculateMetrics()
-   │  ◄── result({metrics}) ───┤
-   │                            │
-   ▼ Update UI + save to DB     ▼
-```
+## Plan
 
-## Files to Create
+### 1. Database: `asset_inventory` Table
 
-### 1. `src/workers/mlTraining.worker.ts`
-A self-contained Web Worker that:
-- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
-- Contains data generation, normalization, SMOTE, feature extraction logic
-- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
-- Listens for `{ type: 'train', algorithm }` messages
-- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
+| Column | Type | Default |
+|--------|------|---------|
+| id | uuid | gen_random_uuid() |
+| ip_address | text (unique) | — |
+| hostname | text | null |
+| device_type | text | 'unknown' |
+| os | text | null |
+| owner | text | null |
+| department | text | null |
+| criticality | text | 'medium' |
+| is_active | boolean | true |
+| last_seen | timestamptz | now() |
+| first_seen | timestamptz | now() |
+| mac_address | text | null |
+| open_ports | jsonb | '[]' |
+| services | jsonb | '[]' |
+| notes | text | null |
+| created_at / updated_at | timestamptz | now() |
 
-**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
+RLS: full public access (matches project pattern). Unique index on `ip_address`.
 
-### 2. `src/hooks/useMLWorker.ts`
-A hook that:
-- Creates/manages the Worker instance
-- Exposes `trainInWorker(algorithm)` returning a Promise
-- Forwards progress updates to a callback
-- Handles cleanup on unmount
+### 2. Python Agent: `docs/asset_inventory.py`
 
-## Files to Modify
+- Passive discovery: extracts unique IPs from captured packets and upserts to `asset_inventory` via the `ingest-traffic` endpoint
+- Device classification heuristics based on port/protocol patterns (e.g., port 22+80+443 = server, port 3389 = Windows workstation, DHCP = endpoint)
+- Updates `last_seen` on every sighting
+- Exposes `classify_device(ip, open_ports, services)` for other modules
 
-### 3. `src/components/MLModelManager.tsx`
-- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
-- `trainNewModel` sends work to the worker, receives metrics back
-- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
-- Progress bar driven by worker progress messages
+### 3. Modify `ingest-traffic` Edge Function
 
-### 4. `src/hooks/useMLPipeline.ts`
-- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
-- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
+- Accept optional `assets[]` payload
+- Upsert into `asset_inventory` (match on `ip_address`, update `last_seen` and merge `open_ports`/`services`)
 
-## Technical Notes
-- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
-- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
-- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
+### 4. UI: Asset Inventory Component + Tab
+
+Create `src/components/AssetInventory.tsx`:
+
+- Table view of all assets with search/filter by device type, criticality, active status
+- Manual add/edit asset form (IP, hostname, device type, owner, criticality)
+- "Last Seen" indicator with stale detection (>24h = warning)
+- Asset count summary cards (servers, workstations, unknown, inactive)
+
+Add "Assets" tab to `src/pages/Index.tsx`.
+
+### 5. Enrich Alerts with Asset Context
+
+Modify `src/components/AlertsPanel.tsx`:
+- When displaying alerts, look up `source_ip` in a cached asset map
+- Show hostname + device type badge next to IP addresses
+
+---
+
+## Files Summary
+
+| Action | File |
+|--------|------|
+| **Migration** | Create `asset_inventory` table |
+| **Create** | `docs/asset_inventory.py` |
+| **Create** | `src/components/AssetInventory.tsx` |
+| **Modify** | `supabase/functions/ingest-traffic/index.ts` — accept assets payload |
+| **Modify** | `src/pages/Index.tsx` — add Assets tab |
+| **Modify** | `src/components/AlertsPanel.tsx` — show asset context on alerts |
 
