@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.56.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 interface IPReputationResult {
@@ -18,6 +18,9 @@ interface IPReputationResult {
   abuse_reports: number;
   source: string;
   cached: boolean;
+  isp: string | null;
+  domain: string | null;
+  usage_type: string | null;
 }
 
 serve(async (req) => {
@@ -35,7 +38,6 @@ serve(async (req) => {
       );
     }
 
-    // Validate IP format
     const ipRegex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
     if (!ipRegex.test(ip_address)) {
       return new Response(
@@ -62,7 +64,7 @@ serve(async (req) => {
 
         if (cacheAge < cacheMaxAge) {
           console.log(`Cache hit for IP: ${ip_address}`);
-          const result: IPReputationResult = {
+          return new Response(JSON.stringify({
             ip_address: cached.ip_address,
             reputation_score: cached.reputation_score,
             threat_types: cached.threat_types || [],
@@ -73,22 +75,30 @@ serve(async (req) => {
             is_proxy: cached.is_proxy,
             abuse_reports: cached.abuse_reports,
             source: cached.source,
-            cached: true
-          };
-          return new Response(JSON.stringify(result), {
+            cached: true,
+            isp: cached.asn_org,
+            domain: null,
+            usage_type: null,
+          } satisfies IPReputationResult), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           });
         }
       }
     }
 
-    // Perform threat intelligence lookup
-    console.log(`Performing threat intelligence lookup for IP: ${ip_address}`);
-    
-    // Use multiple heuristics to determine threat level
-    const threatAnalysis = await analyzeIPThreat(ip_address);
-    
-    // Store/update in database
+    // Try AbuseIPDB first, fall back to heuristic
+    const abuseIPDBKey = Deno.env.get('ABUSEIPDB_API_KEY');
+    let threatAnalysis: ThreatAnalysis;
+
+    if (abuseIPDBKey) {
+      console.log(`Calling AbuseIPDB API for IP: ${ip_address}`);
+      threatAnalysis = await queryAbuseIPDB(ip_address, abuseIPDBKey);
+    } else {
+      console.log(`No ABUSEIPDB_API_KEY configured, using heuristic fallback for IP: ${ip_address}`);
+      threatAnalysis = analyzeIPThreatHeuristic(ip_address);
+    }
+
+    // Upsert into database
     const { error: upsertError } = await supabase
       .from('ip_reputation')
       .upsert({
@@ -101,7 +111,8 @@ serve(async (req) => {
         is_proxy: threatAnalysis.is_proxy,
         is_datacenter: threatAnalysis.is_datacenter,
         abuse_reports: threatAnalysis.abuse_reports,
-        source: 'edge_function',
+        asn_org: threatAnalysis.isp,
+        source: threatAnalysis.source,
         last_checked: new Date().toISOString()
       }, { onConflict: 'ip_address' });
 
@@ -119,8 +130,11 @@ serve(async (req) => {
       is_vpn: threatAnalysis.is_vpn,
       is_proxy: threatAnalysis.is_proxy,
       abuse_reports: threatAnalysis.abuse_reports,
-      source: 'edge_function',
-      cached: false
+      source: threatAnalysis.source,
+      cached: false,
+      isp: threatAnalysis.isp,
+      domain: threatAnalysis.domain,
+      usage_type: threatAnalysis.usage_type,
     };
 
     return new Response(JSON.stringify(result), {
@@ -136,16 +150,85 @@ serve(async (req) => {
   }
 });
 
-async function analyzeIPThreat(ip: string) {
-  // Known malicious IP ranges and patterns
-  const knownMaliciousRanges = [
-    '185.220.101', // Tor exit nodes
-    '193.142.146', // Known C2 servers
-    '91.240.118',  // Spam networks
-    '89.248.167',  // Scanner networks
-    '45.33.32',    // Bruteforce sources
-  ];
+interface ThreatAnalysis {
+  reputation_score: number;
+  threat_types: string[];
+  country_code: string | null;
+  is_tor_exit: boolean;
+  is_vpn: boolean;
+  is_proxy: boolean;
+  is_datacenter: boolean;
+  abuse_reports: number;
+  source: string;
+  isp: string | null;
+  domain: string | null;
+  usage_type: string | null;
+}
 
+/**
+ * Query AbuseIPDB v2 API and map results to our schema.
+ */
+async function queryAbuseIPDB(ip: string, apiKey: string): Promise<ThreatAnalysis> {
+  try {
+    const response = await fetch(
+      `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&verbose`,
+      {
+        headers: {
+          'Key': apiKey,
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`AbuseIPDB API error [${response.status}]: ${await response.text()}`);
+      // Fall back to heuristic on API error
+      return analyzeIPThreatHeuristic(ip);
+    }
+
+    const json = await response.json();
+    const data = json.data;
+
+    const threat_types: string[] = [];
+    const usageType = (data.usageType || '').toLowerCase();
+
+    const is_tor_exit = usageType.includes('tor') || (data.isTor === true);
+    const is_vpn = usageType.includes('vpn') || usageType.includes('hosting');
+    const is_proxy = usageType.includes('proxy');
+    const is_datacenter = usageType.includes('data center') || usageType.includes('hosting');
+
+    if (is_tor_exit) threat_types.push('tor_exit');
+    if (is_vpn) threat_types.push('vpn');
+    if (is_proxy) threat_types.push('proxy');
+    if (is_datacenter) threat_types.push('datacenter');
+    if (data.abuseConfidenceScore >= 50) threat_types.push('known_malicious');
+    if (data.totalReports > 0) threat_types.push('reported_abuse');
+
+    return {
+      reputation_score: Math.min(data.abuseConfidenceScore || 0, 100),
+      threat_types,
+      country_code: data.countryCode || null,
+      is_tor_exit,
+      is_vpn,
+      is_proxy,
+      is_datacenter,
+      abuse_reports: data.totalReports || 0,
+      source: 'abuseipdb',
+      isp: data.isp || null,
+      domain: data.domain || null,
+      usage_type: data.usageType || null,
+    };
+  } catch (err) {
+    console.error('AbuseIPDB request failed:', err);
+    return analyzeIPThreatHeuristic(ip);
+  }
+}
+
+/**
+ * Heuristic fallback when no API key is configured.
+ */
+function analyzeIPThreatHeuristic(ip: string): ThreatAnalysis {
+  const knownMaliciousRanges = ['185.220.101', '193.142.146', '91.240.118', '89.248.167', '45.33.32'];
   const knownTorExitRanges = ['185.220.101', '185.220.102', '185.220.103'];
   const knownDatacenterRanges = ['45.33', '104.131', '167.99', '138.68'];
 
@@ -155,66 +238,47 @@ async function analyzeIPThreat(ip: string) {
   let reputation_score = 0;
   const threat_types: string[] = [];
   let is_tor_exit = false;
-  let is_vpn = false;
-  let is_proxy = false;
   let is_datacenter = false;
   let abuse_reports = 0;
 
-  // Check known malicious ranges
   if (knownMaliciousRanges.includes(ipPrefix)) {
     reputation_score += 70;
     threat_types.push('known_malicious');
     abuse_reports = Math.floor(Math.random() * 200) + 50;
   }
-
-  // Check Tor exit nodes
   if (knownTorExitRanges.includes(ipPrefix)) {
     is_tor_exit = true;
     reputation_score += 30;
     threat_types.push('tor_exit');
   }
-
-  // Check datacenter IPs
   if (knownDatacenterRanges.includes(ipPrefix2)) {
     is_datacenter = true;
     reputation_score += 10;
     threat_types.push('datacenter');
   }
-
-  // Check for private IP ranges (should be flagged if appearing in public traffic)
   if (ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('172.16.')) {
-    reputation_score = 0; // Private IPs are not malicious by nature
+    reputation_score = 0;
     threat_types.push('private_range');
   }
 
-  // Simulate country detection based on IP patterns
   const countryMap: Record<string, string> = {
-    '185': 'DE',
-    '193': 'RU',
-    '91': 'NL',
-    '89': 'NL',
-    '45': 'US',
-    '104': 'US',
-    '167': 'US',
-    '138': 'US',
-    '192': 'US',
-    '10': 'LOCAL',
-    '172': 'LOCAL',
+    '185': 'DE', '193': 'RU', '91': 'NL', '89': 'NL', '45': 'US',
+    '104': 'US', '167': 'US', '138': 'US', '192': 'US', '10': 'LOCAL', '172': 'LOCAL',
   };
   const firstOctet = ip.split('.')[0];
-  const country_code = countryMap[firstOctet] || 'XX';
-
-  // Cap reputation score at 100
-  reputation_score = Math.min(reputation_score, 100);
 
   return {
-    reputation_score,
+    reputation_score: Math.min(reputation_score, 100),
     threat_types,
-    country_code,
+    country_code: countryMap[firstOctet] || 'XX',
     is_tor_exit,
-    is_vpn,
-    is_proxy,
+    is_vpn: false,
+    is_proxy: false,
     is_datacenter,
-    abuse_reports
+    abuse_reports,
+    source: 'heuristic',
+    isp: null,
+    domain: null,
+    usage_type: null,
   };
 }

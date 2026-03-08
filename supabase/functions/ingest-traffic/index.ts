@@ -258,7 +258,7 @@ async function insertAlerts(
       }
     }
 
-    const { error } = await supabase.from("live_alerts").insert({
+    const { data: insertedAlert, error } = await supabase.from("live_alerts").insert({
       alert_type: alert.alert_type,
       severity: alert.severity || "medium",
       source_ip: alert.source_ip,
@@ -268,16 +268,87 @@ async function insertAlerts(
       metadata: alert.metadata || {},
       dedupe_key: alert.dedupe_key || null,
       status: "active",
-    });
+    }).select("id, source_ip, destination_ip").maybeSingle();
 
     if (error) {
       console.error(`Error inserting alert:`, error);
       results[`${resultKey}_error`] = error.message;
     } else {
       inserted++;
+
+      // Auto-enrich: check IP reputation for source IP in background
+      if (insertedAlert?.source_ip) {
+        enrichAlertInBackground(supabase, insertedAlert.id, insertedAlert.source_ip, insertedAlert.destination_ip);
+      }
     }
   }
 
   results[`${resultKey}_inserted`] = inserted;
   results[`${resultKey}_skipped`] = skipped;
+}
+
+/**
+ * Fire-and-forget enrichment: checks IP reputation and stores it in alert metadata.
+ */
+async function enrichAlertInBackground(
+  supabase: ReturnType<typeof createClient>,
+  alertId: string,
+  sourceIp: string,
+  destinationIp: string | null
+) {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Call check-ip-reputation for source IP
+    const srcResponse = await fetch(`${supabaseUrl}/functions/v1/check-ip-reputation`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({ ip_address: sourceIp }),
+    });
+
+    const enrichment: Record<string, unknown> = {};
+    if (srcResponse.ok) {
+      enrichment.source_reputation = await srcResponse.json();
+    }
+
+    // Check destination IP if available
+    if (destinationIp) {
+      const dstResponse = await fetch(`${supabaseUrl}/functions/v1/check-ip-reputation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ ip_address: destinationIp }),
+      });
+      if (dstResponse.ok) {
+        enrichment.destination_reputation = await dstResponse.json();
+      }
+    }
+
+    const srcRep = enrichment.source_reputation as Record<string, unknown> | undefined;
+    const dstRep = enrichment.destination_reputation as Record<string, unknown> | undefined;
+    enrichment.summary = {
+      source_malicious: srcRep?.is_malicious || false,
+      destination_malicious: dstRep?.is_malicious || false,
+      max_threat_score: Math.max(
+        (srcRep?.reputation_score as number) || 0,
+        (dstRep?.reputation_score as number) || 0
+      ),
+      enriched_at: new Date().toISOString(),
+    };
+
+    await supabase
+      .from("live_alerts")
+      .update({ metadata: enrichment })
+      .eq("id", alertId);
+
+    console.log(`Enriched alert ${alertId} with threat intel`);
+  } catch (err) {
+    console.error(`Failed to enrich alert ${alertId}:`, err);
+  }
 }

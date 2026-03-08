@@ -30,6 +30,12 @@ const ThreatIntelligenceDashboard = () => {
     is_tor_exit: boolean;
     is_vpn: boolean;
     is_proxy: boolean;
+    source: string;
+    isp: string | null;
+    domain: string | null;
+    usage_type: string | null;
+    abuse_reports: number;
+    cached: boolean;
   } | null>(null);
 
   const handleCheckIP = async () => {
@@ -184,15 +190,26 @@ const ThreatIntelligenceDashboard = () => {
                             <MapPin className="h-4 w-4" />
                             <span>Country: {checkResult.country_code || 'Unknown'}</span>
                           </div>
-                          {checkResult.is_tor_exit && (
-                            <Badge variant="outline" className="bg-purple-100 text-purple-800">Tor Exit Node</Badge>
+                          {checkResult.isp && (
+                            <p className="text-sm text-muted-foreground">ISP: {checkResult.isp}</p>
                           )}
-                          {checkResult.is_vpn && (
-                            <Badge variant="outline" className="bg-blue-100 text-blue-800">VPN</Badge>
+                          {checkResult.domain && (
+                            <p className="text-sm text-muted-foreground">Domain: {checkResult.domain}</p>
                           )}
-                          {checkResult.is_proxy && (
-                            <Badge variant="outline" className="bg-orange-100 text-orange-800">Proxy</Badge>
+                          {checkResult.usage_type && (
+                            <p className="text-sm text-muted-foreground">Usage: {checkResult.usage_type}</p>
                           )}
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {checkResult.is_tor_exit && (
+                              <Badge variant="outline" className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">Tor Exit Node</Badge>
+                            )}
+                            {checkResult.is_vpn && (
+                              <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">VPN</Badge>
+                            )}
+                            {checkResult.is_proxy && (
+                              <Badge variant="outline" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">Proxy</Badge>
+                            )}
+                          </div>
                         </div>
                       </div>
                       <div>
@@ -205,6 +222,15 @@ const ThreatIntelligenceDashboard = () => {
                           <span className={`text-2xl font-bold ${getReputationColor(checkResult.reputation_score)}`}>
                             {checkResult.reputation_score}/100
                           </span>
+                        </div>
+                        <div className="mt-3 flex items-center space-x-2">
+                          <Badge variant="outline" className="text-xs">
+                            Source: {checkResult.source === 'abuseipdb' ? '🔴 AbuseIPDB' : checkResult.source === 'heuristic' ? '⚙️ Heuristic' : `📦 ${checkResult.source}`}
+                          </Badge>
+                          {checkResult.cached && (
+                            <Badge variant="secondary" className="text-xs">Cached</Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">{checkResult.abuse_reports} abuse reports</span>
                         </div>
                         {checkResult.threat_types.length > 0 && (
                           <div className="mt-4">
@@ -245,6 +271,9 @@ const ThreatIntelligenceDashboard = () => {
                               {ip.threat_types?.slice(0, 2).map((t, i) => (
                                 <Badge key={i} variant="secondary" className="text-xs">{t}</Badge>
                               ))}
+                              <Badge variant="outline" className="text-xs">
+                                {ip.source === 'abuseipdb' ? '🔴 API' : ip.source === 'heuristic' ? '⚙️' : ip.source}
+                              </Badge>
                             </div>
                           </div>
                         </div>
