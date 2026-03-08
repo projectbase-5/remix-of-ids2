@@ -384,6 +384,15 @@ def send_batch():
             logger.error(f"Threat enrichment failed: {e}")
 
     # ---------------------------------------------------------------
+    # 2b. Suppress noise (trusted IPs, severity filter, rate limit)
+    # ---------------------------------------------------------------
+    if suppression_engine and all_alerts:
+        try:
+            all_alerts = suppression_engine.evaluate(all_alerts)
+        except Exception as e:
+            logger.error(f"Alert suppression failed: {e}")
+
+    # ---------------------------------------------------------------
     # 3. Deduplicate and send alerts to DB
     # ---------------------------------------------------------------
     sent_count = 0
