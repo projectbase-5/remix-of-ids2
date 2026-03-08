@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, AlertTriangle, Activity, LogOut, User } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { Clock, AlertTriangle, Activity, LogOut, User, Shield } from "lucide-react";
 import NetworkTrafficChart from "@/components/NetworkTrafficChart";
 import SystemStatus from "@/components/SystemStatus";
 import NetworkEventsList from "@/components/NetworkEventsList";
@@ -29,12 +30,49 @@ import MalwareBehaviorDashboard from "@/components/MalwareBehaviorDashboard";
 import AssetInventory from "@/components/AssetInventory";
 import NetworkTopology from "@/components/NetworkTopology";
 import DataRetention from "@/components/DataRetention";
+import RiskScoreDashboard from "@/components/RiskScoreDashboard";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
 import { useAuth } from "@/hooks/useAuth";
 import { MLModel } from "@/hooks/useMLPipeline";
 import logo from "@/assets/logo.png";
+import { supabase } from "@/integrations/supabase/client";
+
+const NetworkRiskCard = () => {
+  const [risk, setRisk] = useState(0);
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    supabase.from('host_risk_scores').select('total_risk,asset_multiplier').then(({ data }) => {
+      if (data && data.length > 0) {
+        const tw = data.reduce((s, h) => s + h.total_risk * h.asset_multiplier, 0);
+        const w = data.reduce((s, h) => s + h.asset_multiplier, 0);
+        setRisk(Math.round(tw / Math.max(w, 1)));
+        setCount(data.length);
+      }
+    });
+  }, []);
+  const color = risk >= 70 ? 'text-destructive' : risk >= 40 ? 'text-yellow-500' : 'text-green-500';
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-4">
+          <Shield className="h-8 w-8 text-muted-foreground" />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-muted-foreground">Network Risk Score</div>
+            <div className="flex items-center gap-3">
+              <span className={`text-3xl font-bold ${color}`}>{risk}</span>
+              <span className="text-sm text-muted-foreground">/ 100</span>
+              <Progress value={risk} className="flex-1 h-2" />
+              <span className="text-xs text-muted-foreground">{count} hosts</span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const Index = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeModel, setActiveModel] = useState<MLModel | null>(null);
@@ -110,11 +148,15 @@ const Index = () => {
               <TabsTrigger value="hunt">Hunt</TabsTrigger>
               <TabsTrigger value="topology">Topology</TabsTrigger>
               <TabsTrigger value="retention">Retention</TabsTrigger>
+              <TabsTrigger value="risk">Risk Scores</TabsTrigger>
             </TabsList>
           </div>
 
           {/* Tab Content */}
           <TabsContent value="overview" className="space-y-6">
+            {/* Network Risk Score Card */}
+            <NetworkRiskCard />
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <NetworkTrafficChart dataStore={dataStore} />
@@ -270,6 +312,10 @@ const Index = () => {
 
           <TabsContent value="retention">
             <DataRetention />
+          </TabsContent>
+
+          <TabsContent value="risk">
+            <RiskScoreDashboard />
           </TabsContent>
         </Tabs>
       </main>

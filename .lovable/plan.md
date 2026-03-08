@@ -1,106 +1,62 @@
 
 
-# Modules 8 & 9 — Threat Hunting Engine + Risk Score Calculator
+# Move ML Training to Web Worker
 
-## Current State
+## Problem
+ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-| Module | Exists | Gap |
-|--------|--------|-----|
-| **Threat Hunting** | `ThreatHunter.tsx` — filter-based search across incidents/predictions/IP reputation | No Python agent, no advanced queries (rare destinations, DNS entropy) |
-| **Risk Scoring** | `incident_scoring_engine.py` scores incidents per source IP | No per-host composite risk score combining alerts + anomalies + reputation; no network-wide risk on Overview |
+## Solution
+Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
 
----
+```text
+UI Thread                    Web Worker
+   │                            │
+   ├─ postMessage({algorithm}) ──►
+   │                            ├─ generateSyntheticData()
+   │  ◄── progress(30%) ───────┤
+   │                            ├─ preprocessData()
+   │  ◄── progress(60%) ───────┤
+   │                            ├─ trainModel()
+   │  ◄── progress(90%) ───────┤
+   │                            ├─ calculateMetrics()
+   │  ◄── result({metrics}) ───┤
+   │                            │
+   ▼ Update UI + save to DB     ▼
+```
 
-## Module 8 — Threat Hunting Engine
+## Files to Create
 
-### Python Agent: `docs/threat_hunting_engine.py`
+### 1. `src/workers/mlTraining.worker.ts`
+A self-contained Web Worker that:
+- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
+- Contains data generation, normalization, SMOTE, feature extraction logic
+- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
+- Listens for `{ type: 'train', algorithm }` messages
+- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
 
-- Pre-built hunt queries:
-  - **Rare destinations**: find hosts contacting IPs seen by < N other hosts
-  - **DNS entropy**: flag hostnames with high Shannon entropy (DGA detection)
-  - **Beaconing**: detect periodic connections (low jitter intervals)
-  - **Data exfil**: find hosts with abnormally high outbound bytes
-- Each query posts results to `ingest-traffic` as `hunt_results[]`
-- Exposes `run_hunt(query_type, params)` callable from other modules
+**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
 
-### Database: `hunt_results` Table
+### 2. `src/hooks/useMLWorker.ts`
+A hook that:
+- Creates/manages the Worker instance
+- Exposes `trainInWorker(algorithm)` returning a Promise
+- Forwards progress updates to a callback
+- Handles cleanup on unmount
 
-| Column | Type |
-|--------|------|
-| id | uuid |
-| hunt_type | text (rare_destination, dns_entropy, beaconing, data_exfil) |
-| source_ip | text |
-| target | text (destination IP or domain) |
-| score | numeric |
-| details | jsonb |
-| created_at | timestamptz |
+## Files to Modify
 
-### UI: Enhance `ThreatHunter.tsx`
+### 3. `src/components/MLModelManager.tsx`
+- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
+- `trainNewModel` sends work to the worker, receives metrics back
+- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
+- Progress bar driven by worker progress messages
 
-- Add "Advanced Hunts" section with one-click buttons for each hunt type
-- Display `hunt_results` in a dedicated results tab
-- Show entropy scores and beaconing intervals visually
+### 4. `src/hooks/useMLPipeline.ts`
+- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
+- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
 
-### Modify `ingest-traffic`
-
-- Accept `hunt_results[]` payload and insert into table
-
----
-
-## Module 9 — Risk Score Calculator
-
-### Python Agent: `docs/risk_scoring_engine.py`
-
-- Computes per-host risk score:
-  ```
-  risk = alert_score + anomaly_score + reputation_penalty + asset_criticality_weight
-  ```
-  - `alert_score`: sum of severity weights from `scored_incidents` for that IP
-  - `anomaly_score`: count of anomaly predictions × 5
-  - `reputation_penalty`: (100 - reputation_score) from `ip_reputation`
-  - `asset_criticality_weight`: critical=2x, high=1.5x, medium=1x, low=0.5x
-- Pushes results to `host_risk_scores` table
-- Computes **network-wide risk** = weighted average of all active host scores
-
-### Database: `host_risk_scores` Table
-
-| Column | Type |
-|--------|------|
-| id | uuid |
-| ip_address | text (unique) |
-| hostname | text |
-| alert_score | integer |
-| anomaly_score | integer |
-| reputation_score | integer |
-| asset_multiplier | numeric |
-| total_risk | integer |
-| risk_level | text (critical/high/medium/low) |
-| updated_at | timestamptz |
-| created_at | timestamptz |
-
-### UI: `src/components/RiskScoreDashboard.tsx`
-
-- Network Risk Score gauge (0-100) at the top
-- Top 10 riskiest hosts table with breakdown columns
-- Risk trend chart (recharts)
-- Manual "Recalculate" button that computes scores client-side from existing tables
-
-### Overview Page Enhancement
-
-- Add a **Network Risk Score** card to the Overview grid (above Recent Threats)
-- Shows the aggregate score with color coding (green/yellow/red)
-
----
-
-## Files Summary
-
-| Action | File |
-|--------|------|
-| **Create** | `docs/threat_hunting_engine.py` |
-| **Create** | `docs/risk_scoring_engine.py` |
-| **Create** | `src/components/RiskScoreDashboard.tsx` |
-| **Modify** | `src/components/ThreatHunter.tsx` — add advanced hunt buttons + hunt_results display |
-| **Modify** | `supabase/functions/ingest-traffic/index.ts` — accept hunt_results payload |
-| **Modify** | `src/pages/Index.tsx` — add Risk tab + Network Risk card on Overview |
-| **Migration** | Create `hunt_results` and `host_risk_scores` tables |
+## Technical Notes
+- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
+- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
+- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
 

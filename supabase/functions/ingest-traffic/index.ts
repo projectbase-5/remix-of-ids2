@@ -289,6 +289,52 @@ Deno.serve(async (req) => {
     }
 
     // ==================================================================
+    // 9. Insert hunt results into `hunt_results`
+    // ==================================================================
+    if (body.hunt_results && Array.isArray(body.hunt_results) && body.hunt_results.length > 0) {
+      const huntRows = body.hunt_results.map((h: Record<string, unknown>) => ({
+        hunt_type: h.hunt_type || "unknown",
+        source_ip: h.source_ip || "0.0.0.0",
+        target: h.target || "",
+        score: h.score || 0,
+        details: h.details || {},
+      }));
+      const { error } = await supabase.from("hunt_results").insert(huntRows);
+      if (error) {
+        console.error("Error inserting hunt results:", error);
+        results.hunt_results_error = error.message;
+      } else {
+        results.hunt_results_inserted = huntRows.length;
+      }
+    }
+
+    // ==================================================================
+    // 10. Upsert host risk scores into `host_risk_scores`
+    // ==================================================================
+    if (body.risk_scores && Array.isArray(body.risk_scores) && body.risk_scores.length > 0) {
+      let riskUpserted = 0;
+      for (const rs of body.risk_scores) {
+        const { error } = await supabase.from("host_risk_scores").upsert({
+          ip_address: rs.ip_address,
+          hostname: rs.hostname || null,
+          alert_score: rs.alert_score || 0,
+          anomaly_score: rs.anomaly_score || 0,
+          reputation_score: rs.reputation_score || 0,
+          asset_multiplier: rs.asset_multiplier || 1.0,
+          total_risk: rs.total_risk || 0,
+          risk_level: rs.risk_level || "low",
+        }, { onConflict: "ip_address" });
+        if (error) {
+          console.error("Error upserting risk score:", error);
+          results.risk_scores_error = error.message;
+        } else {
+          riskUpserted++;
+        }
+      }
+      results.risk_scores_upserted = riskUpserted;
+    }
+
+    // ==================================================================
     // 7. Upsert scored incidents from agent-side scoring engine
     // ==================================================================
     if (body.incidents && Array.isArray(body.incidents) && body.incidents.length > 0) {
