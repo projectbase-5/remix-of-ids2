@@ -37,6 +37,41 @@ import { useIDSDataStore } from "@/hooks/useIDSDataStore";
 import { useAuth } from "@/hooks/useAuth";
 import { MLModel } from "@/hooks/useMLPipeline";
 import logo from "@/assets/logo.png";
+
+const NetworkRiskCard = () => {
+  const [risk, setRisk] = useState(0);
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    supabase.from('host_risk_scores').select('total_risk,asset_multiplier').then(({ data }) => {
+      if (data && data.length > 0) {
+        const tw = data.reduce((s, h) => s + h.total_risk * h.asset_multiplier, 0);
+        const w = data.reduce((s, h) => s + h.asset_multiplier, 0);
+        setRisk(Math.round(tw / Math.max(w, 1)));
+        setCount(data.length);
+      }
+    });
+  }, []);
+  const color = risk >= 70 ? 'text-destructive' : risk >= 40 ? 'text-yellow-500' : 'text-green-500';
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center gap-4">
+          <Shield className="h-8 w-8 text-muted-foreground" />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-muted-foreground">Network Risk Score</div>
+            <div className="flex items-center gap-3">
+              <span className={`text-3xl font-bold ${color}`}>{risk}</span>
+              <span className="text-sm text-muted-foreground">/ 100</span>
+              <Progress value={risk} className="flex-1 h-2" />
+              <span className="text-xs text-muted-foreground">{count} hosts</span>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 const Index = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [activeModel, setActiveModel] = useState<MLModel | null>(null);
