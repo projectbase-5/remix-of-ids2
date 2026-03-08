@@ -118,6 +118,9 @@ const Index = () => {
 
           {/* Tab Content */}
           <TabsContent value="overview" className="space-y-6">
+            {/* Network Risk Score Card */}
+            <NetworkRiskCard />
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
                 <NetworkTrafficChart dataStore={dataStore} />
