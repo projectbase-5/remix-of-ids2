@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.execute-response]
 verify_jwt = false
+
+[functions.cleanup-data]
+verify_jwt = false
