@@ -418,6 +418,21 @@ const DetectionEngine = ({ dataStore }: DetectionEngineProps) => {
         <TabsContent value="correlator">
           <ThreatCorrelator threats={dataStore.threats} networkEvents={dataStore.networkEvents} />
         </TabsContent>
+
+        <TabsContent value="simulations">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center space-x-2">
+                <FlaskConical className="h-5 w-5" />
+                <span>Attack Simulations</span>
+              </CardTitle>
+              <CardDescription>Generate synthetic attack traffic to test IDS detection capabilities</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AttackSimulator />
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
     </div>
   );
