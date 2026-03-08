@@ -64,6 +64,66 @@ export type Database = {
           },
         ]
       }
+      asset_inventory: {
+        Row: {
+          created_at: string
+          criticality: string
+          department: string | null
+          device_type: string
+          first_seen: string
+          hostname: string | null
+          id: string
+          ip_address: string
+          is_active: boolean
+          last_seen: string
+          mac_address: string | null
+          notes: string | null
+          open_ports: Json
+          os: string | null
+          owner: string | null
+          services: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          criticality?: string
+          department?: string | null
+          device_type?: string
+          first_seen?: string
+          hostname?: string | null
+          id?: string
+          ip_address: string
+          is_active?: boolean
+          last_seen?: string
+          mac_address?: string | null
+          notes?: string | null
+          open_ports?: Json
+          os?: string | null
+          owner?: string | null
+          services?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          criticality?: string
+          department?: string | null
+          device_type?: string
+          first_seen?: string
+          hostname?: string | null
+          id?: string
+          ip_address?: string
+          is_active?: boolean
+          last_seen?: string
+          mac_address?: string | null
+          notes?: string | null
+          open_ports?: Json
+          os?: string | null
+          owner?: string | null
+          services?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       attack_patterns: {
         Row: {
           attack_type: string

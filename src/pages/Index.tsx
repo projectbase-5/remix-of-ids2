@@ -26,6 +26,7 @@ import CorrelationEngine from "@/components/CorrelationEngine";
 import MLMetricsDashboard from "@/components/MLMetricsDashboard";
 import ThreatHunter from "@/components/ThreatHunter";
 import MalwareBehaviorDashboard from "@/components/MalwareBehaviorDashboard";
+import AssetInventory from "@/components/AssetInventory";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
@@ -93,6 +94,7 @@ const Index = () => {
               <TabsTrigger value="malware">Malware Sigs</TabsTrigger>
               <TabsTrigger value="malware-behavior">Malware Behavior</TabsTrigger>
               <TabsTrigger value="rules">Detection Rules</TabsTrigger>
+              <TabsTrigger value="assets">Assets</TabsTrigger>
               <TabsTrigger value="events">Events</TabsTrigger>
               <TabsTrigger value="alerts">Alerts</TabsTrigger>
               <TabsTrigger value="engine">Engine</TabsTrigger>
@@ -192,6 +194,10 @@ const Index = () => {
 
           <TabsContent value="datasets">
             <DatasetManager />
+          </TabsContent>
+
+          <TabsContent value="assets">
+            <AssetInventory />
           </TabsContent>
 
           <TabsContent value="events">

@@ -1,11 +1,12 @@
-import { useState, memo } from "react";
+import { useState, useEffect, memo, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, Search, Clock, MapPin, Shield, Globe } from "lucide-react";
+import { AlertTriangle, Search, Clock, MapPin, Shield, Globe, Monitor } from "lucide-react";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AlertsPanelProps {
   dataStore: ReturnType<typeof useIDSDataStore>;
@@ -31,9 +32,33 @@ interface AlertMetadata {
   };
 }
 
+interface AssetInfo {
+  hostname: string | null;
+  device_type: string;
+  criticality: string;
+}
+
 const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
   const [filter, setFilter] = useState<string>("");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
+  const [assetMap, setAssetMap] = useState<Record<string, AssetInfo>>({});
+
+  // Fetch asset inventory for IP enrichment
+  useEffect(() => {
+    const fetchAssets = async () => {
+      const { data } = await supabase
+        .from("asset_inventory")
+        .select("ip_address, hostname, device_type, criticality");
+      if (data) {
+        const map: Record<string, AssetInfo> = {};
+        for (const a of data) {
+          map[a.ip_address] = { hostname: a.hostname, device_type: a.device_type, criticality: a.criticality };
+        }
+        setAssetMap(map);
+      }
+    };
+    fetchAssets();
+  }, []);
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
@@ -186,6 +211,12 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
                             <div className="flex items-center space-x-1">
                               <MapPin className="h-3 w-3" />
                               <span>From: {alert.sourceIP}</span>
+                              {assetMap[alert.sourceIP] && (
+                                <Badge variant="secondary" className="text-xs ml-1">
+                                  <Monitor className="h-3 w-3 mr-0.5" />
+                                  {assetMap[alert.sourceIP].hostname || assetMap[alert.sourceIP].device_type.replace(/_/g, " ")}
+                                </Badge>
+                              )}
                               {srcRep?.country_code && (
                                 <Badge variant="outline" className="text-xs ml-1">{srcRep.country_code}</Badge>
                               )}
@@ -193,6 +224,12 @@ const AlertsPanel = memo(({ dataStore }: AlertsPanelProps) => {
                             <div className="flex items-center space-x-1">
                               <Shield className="h-3 w-3" />
                               <span>Target: {alert.targetIP}</span>
+                              {assetMap[alert.targetIP] && (
+                                <Badge variant="secondary" className="text-xs ml-1">
+                                  <Monitor className="h-3 w-3 mr-0.5" />
+                                  {assetMap[alert.targetIP].hostname || assetMap[alert.targetIP].device_type.replace(/_/g, " ")}
+                                </Badge>
+                              )}
                             </div>
                           </div>
 
