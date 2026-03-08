@@ -78,9 +78,12 @@ const HUNT_TYPES = [
 
 const ThreatHunter = ({ isDemoMode }: { isDemoMode?: boolean }) => {
   const [filters, setFilters] = useState<HuntFilters>(DEFAULT_FILTERS);
+  const [logFilters, setLogFilters] = useState<LogSearchFilters>(DEFAULT_LOG_FILTERS);
   const [results, setResults] = useState<HuntResult[]>([]);
+  const [logResults, setLogResults] = useState<LogResult[]>([]);
   const [advancedResults, setAdvancedResults] = useState<AdvancedHuntResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [logLoading, setLogLoading] = useState(false);
   const [advancedLoading, setAdvancedLoading] = useState<string | null>(null);
   const [savedQueries, setSavedQueries] = useState<SavedQuery[]>(() => {
     try { return JSON.parse(localStorage.getItem('threat_hunt_queries') || '[]'); } catch { return []; }
