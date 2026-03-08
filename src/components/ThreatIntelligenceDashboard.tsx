@@ -30,6 +30,12 @@ const ThreatIntelligenceDashboard = () => {
     is_tor_exit: boolean;
     is_vpn: boolean;
     is_proxy: boolean;
+    source: string;
+    isp: string | null;
+    domain: string | null;
+    usage_type: string | null;
+    abuse_reports: number;
+    cached: boolean;
   } | null>(null);
 
   const handleCheckIP = async () => {
