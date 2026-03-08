@@ -226,6 +226,16 @@ const MLModelManager: React.FC<MLModelManagerProps> = ({ onModelTrained }) => {
               >
                 DT+SVM
               </Button>
+              <Separator orientation="vertical" className="h-8" />
+              <Button 
+                onClick={() => trainOnLiveData('RandomForest')} 
+                disabled={trainingProgress > 0}
+                variant="secondary"
+                className="flex items-center space-x-2"
+              >
+                <Database className="h-4 w-4" />
+                <span>Train on Live Data {liveDataCount > 0 && `(${liveDataCount})`}</span>
+              </Button>
             </div>
             
             {trainingProgress > 0 && (
