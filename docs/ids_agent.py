@@ -105,6 +105,7 @@ threat_enricher = None
 asset_discovery = None
 response_manager = None
 notification_dispatcher = None
+suppression_engine = None
 
 # State
 last_rule_refresh = 0.0
