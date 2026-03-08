@@ -122,46 +122,17 @@ const DetectionEngine = ({ dataStore }: DetectionEngineProps) => {
     setDetectionRules(mapped);
   }, [supabaseRules, rulesLoading]);
 
-  // Generate network events and process them - only in demo mode
+  // Demo event generation now lives in useIDSDataStore (global).
+  // Keep engine stats in sync with dataStore metrics.
   useEffect(() => {
-    if (!isEngineRunning || !dataStore.isDemoMode) return;
-
-    const generateNetworkEvent = (): NetworkEvent => {
-      const protocols = ["TCP", "UDP", "ICMP", "HTTP", "HTTPS"];
-      const commonPorts = [80, 443, 22, 21, 23, 25, 53, 110, 143, 993, 995];
-      const suspiciousPorts = [1433, 3389, 5432, 6379, 27017];
-      
-      const isSuspicious = Math.random() > 0.85;
-      const port = isSuspicious 
-        ? suspiciousPorts[Math.floor(Math.random() * suspiciousPorts.length)]
-        : commonPorts[Math.floor(Math.random() * commonPorts.length)];
-
-      return {
-        id: `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: new Date().toISOString(),
-        sourceIP: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-        destinationIP: `192.168.1.${Math.floor(Math.random() * 255)}`,
-        protocol: protocols[Math.floor(Math.random() * protocols.length)],
-        port,
-        packetSize: Math.floor(Math.random() * 1500) + 64,
-        flags: isSuspicious ? ["SYN", "FIN"] : ["ACK"],
-        payload: isSuspicious ? "SELECT * FROM users WHERE 1=1" : undefined,
-      };
-    };
-
-    const interval = setInterval(() => {
-      const newEvent = generateNetworkEvent();
-      dataStore.addNetworkEvent(newEvent);
-      processNetworkEvent(newEvent);
-      setEngineStats(prev => ({
-        ...prev,
-        eventsProcessed: prev.eventsProcessed + 1,
-        processingRate: dataStore.systemMetrics.eventsPerSecond,
-      }));
-    }, 300);
-
-    return () => clearInterval(interval);
-  }, [isEngineRunning, detectionRules, dataStore]);
+    if (!dataStore.isDemoMode) return;
+    setEngineStats(prev => ({
+      ...prev,
+      eventsProcessed: dataStore.systemMetrics.packetsProcessed,
+      processingRate: dataStore.systemMetrics.eventsPerSecond,
+      threatsDetected: dataStore.systemMetrics.threatsBlocked,
+    }));
+  }, [dataStore.isDemoMode, dataStore.systemMetrics.packetsProcessed, dataStore.systemMetrics.eventsPerSecond, dataStore.systemMetrics.threatsBlocked]);
 
   const processNetworkEvent = (event: NetworkEvent) => {
     detectionRules.forEach(rule => {
