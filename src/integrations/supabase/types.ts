@@ -103,6 +103,92 @@ export type Database = {
         }
         Relationships: []
       }
+      correlation_events: {
+        Row: {
+          attack_type: string
+          created_at: string
+          event_id: string
+          event_type: string
+          group_id: string
+          id: string
+          phase: string
+          threat_score: number
+          timestamp: string
+        }
+        Insert: {
+          attack_type: string
+          created_at?: string
+          event_id: string
+          event_type: string
+          group_id: string
+          id?: string
+          phase: string
+          threat_score?: number
+          timestamp: string
+        }
+        Update: {
+          attack_type?: string
+          created_at?: string
+          event_id?: string
+          event_type?: string
+          group_id?: string
+          id?: string
+          phase?: string
+          threat_score?: number
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "correlation_events_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "correlation_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      correlation_groups: {
+        Row: {
+          composite_score: number
+          created_at: string
+          escalated: boolean
+          first_seen: string
+          id: string
+          is_multi_stage: boolean
+          last_seen: string
+          phases: Json
+          sequence_pattern: string | null
+          source_ip: string
+          updated_at: string
+        }
+        Insert: {
+          composite_score?: number
+          created_at?: string
+          escalated?: boolean
+          first_seen: string
+          id?: string
+          is_multi_stage?: boolean
+          last_seen: string
+          phases?: Json
+          sequence_pattern?: string | null
+          source_ip: string
+          updated_at?: string
+        }
+        Update: {
+          composite_score?: number
+          created_at?: string
+          escalated?: boolean
+          first_seen?: string
+          id?: string
+          is_multi_stage?: boolean
+          last_seen?: string
+          phases?: Json
+          sequence_pattern?: string | null
+          source_ip?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       datasets: {
         Row: {
           created_at: string
