@@ -790,6 +790,45 @@ export type Database = {
           },
         ]
       }
+      network_topology: {
+        Row: {
+          bytes_transferred: number
+          connection_count: number
+          created_at: string
+          destination_ip: string
+          first_seen: string
+          id: string
+          last_seen: string
+          protocols: Json
+          source_ip: string
+          updated_at: string
+        }
+        Insert: {
+          bytes_transferred?: number
+          connection_count?: number
+          created_at?: string
+          destination_ip: string
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          protocols?: Json
+          source_ip: string
+          updated_at?: string
+        }
+        Update: {
+          bytes_transferred?: number
+          connection_count?: number
+          created_at?: string
+          destination_ip?: string
+          first_seen?: string
+          id?: string
+          last_seen?: string
+          protocols?: Json
+          source_ip?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       network_traffic: {
         Row: {
           created_at: string
@@ -995,6 +1034,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      retention_policies: {
+        Row: {
+          archive_before_delete: boolean
+          created_at: string
+          id: string
+          is_active: boolean
+          last_cleanup_at: string | null
+          retention_days: number
+          rows_deleted: number | null
+          table_name: string
+          updated_at: string
+        }
+        Insert: {
+          archive_before_delete?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_cleanup_at?: string | null
+          retention_days?: number
+          rows_deleted?: number | null
+          table_name: string
+          updated_at?: string
+        }
+        Update: {
+          archive_before_delete?: boolean
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_cleanup_at?: string | null
+          retention_days?: number
+          rows_deleted?: number | null
+          table_name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       scored_incidents: {
         Row: {

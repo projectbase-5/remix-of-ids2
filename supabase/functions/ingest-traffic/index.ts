@@ -241,6 +241,54 @@ Deno.serve(async (req) => {
     }
 
     // ==================================================================
+    // 8. Upsert topology connections into `network_topology`
+    // ==================================================================
+    if (body.topology && Array.isArray(body.topology) && body.topology.length > 0) {
+      let topologyUpserted = 0;
+      for (const edge of body.topology) {
+        const srcIp = edge.source_ip || "0.0.0.0";
+        const dstIp = edge.destination_ip || "0.0.0.0";
+
+        // Normalize direction so (A,B) == (B,A)
+        const [normalizedSrc, normalizedDst] = [srcIp, dstIp].sort();
+
+        const { data: existing } = await supabase
+          .from("network_topology")
+          .select("id, connection_count, protocols, bytes_transferred")
+          .eq("source_ip", normalizedSrc)
+          .eq("destination_ip", normalizedDst)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          const prev = existing[0];
+          const prevProtocols = Array.isArray(prev.protocols) ? prev.protocols : [];
+          const newProtocols = Array.isArray(edge.protocols) ? edge.protocols : [];
+          const mergedProtocols = [...new Set([...prevProtocols, ...newProtocols])];
+
+          await supabase
+            .from("network_topology")
+            .update({
+              connection_count: (prev.connection_count || 0) + (edge.connection_count || 1),
+              protocols: mergedProtocols,
+              bytes_transferred: (prev.bytes_transferred || 0) + (edge.bytes_transferred || 0),
+              last_seen: new Date().toISOString(),
+            })
+            .eq("id", prev.id);
+        } else {
+          await supabase.from("network_topology").insert({
+            source_ip: normalizedSrc,
+            destination_ip: normalizedDst,
+            connection_count: edge.connection_count || 1,
+            protocols: edge.protocols || [],
+            bytes_transferred: edge.bytes_transferred || 0,
+          });
+        }
+        topologyUpserted++;
+      }
+      results.topology_upserted = topologyUpserted;
+    }
+
+    // ==================================================================
     // 7. Upsert scored incidents from agent-side scoring engine
     // ==================================================================
     if (body.incidents && Array.isArray(body.incidents) && body.incidents.length > 0) {

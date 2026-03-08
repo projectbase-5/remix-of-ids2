@@ -1,126 +1,62 @@
 
 
-# Modules 5, 6, 7 — Implementation Plan
+# Move ML Training to Web Worker
 
-## Current State Analysis
+## Problem
+ML training (data generation, preprocessing, model training) runs on the main UI thread, freezing the browser despite the yield points added earlier. The CPU-intensive algorithms (especially GBDT with 50 trees) block the thread for long stretches between yields.
 
-| Module | What Exists | Gap |
-|--------|-------------|-----|
-| **Network Topology** | `ThreatMap.tsx` shows geographic threat distribution | No device-to-device connections or network graph |
-| **Data Retention** | Tables grow unbounded | No archival, compression, or cleanup |
-| **Notifications** | `send-alert-notification` edge function + `AlertNotifications.tsx` UI with email/webhook | No Python dispatcher for agent-side notifications |
+## Solution
+Create a dedicated Web Worker that handles all CPU-heavy work. The main thread only sends a message and receives results.
 
----
+```text
+UI Thread                    Web Worker
+   │                            │
+   ├─ postMessage({algorithm}) ──►
+   │                            ├─ generateSyntheticData()
+   │  ◄── progress(30%) ───────┤
+   │                            ├─ preprocessData()
+   │  ◄── progress(60%) ───────┤
+   │                            ├─ trainModel()
+   │  ◄── progress(90%) ───────┤
+   │                            ├─ calculateMetrics()
+   │  ◄── result({metrics}) ───┤
+   │                            │
+   ▼ Update UI + save to DB     ▼
+```
 
-## Module 5 — Network Topology Mapper
+## Files to Create
 
-### Python Agent: `docs/network_mapper.py`
+### 1. `src/workers/mlTraining.worker.ts`
+A self-contained Web Worker that:
+- Contains all ML algorithm classes inline (C4.5, GBDT, DTSVMHybrid, RandomForest)
+- Contains data generation, normalization, SMOTE, feature extraction logic
+- Cannot import from `node_modules` that use Node APIs, so the `ml-random-forest` and `ml-pca` dependencies need special handling
+- Listens for `{ type: 'train', algorithm }` messages
+- Posts back `{ type: 'progress', value }` and `{ type: 'result', metrics, algorithm }` messages
 
-- Discovers devices from captured traffic (source/dest IP pairs)
-- Builds adjacency graph tracking connections between hosts
-- Identifies gateway nodes (high connection count)
-- Pushes topology data to `ingest-traffic` as `topology: {nodes: [...], edges: [...]}`
+**Key constraint**: `ml-random-forest` and `ml-pca` use `ml-matrix` which should work in workers via Vite's worker bundling. Vite supports `new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })` which bundles dependencies.
 
-### Database: `network_topology` Table
+### 2. `src/hooks/useMLWorker.ts`
+A hook that:
+- Creates/manages the Worker instance
+- Exposes `trainInWorker(algorithm)` returning a Promise
+- Forwards progress updates to a callback
+- Handles cleanup on unmount
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| source_ip | text | Node A |
-| destination_ip | text | Node B |
-| connection_count | integer | Times observed |
-| protocols | jsonb | Protocols used (TCP, UDP) |
-| first_seen / last_seen | timestamptz | Time range |
-| bytes_transferred | bigint | Total data volume |
+## Files to Modify
 
-### UI: `src/components/NetworkTopology.tsx`
+### 3. `src/components/MLModelManager.tsx`
+- Import and use `useMLWorker` instead of calling `mlPipeline.preprocessData` + `mlPipeline.trainModel` directly
+- `trainNewModel` sends work to the worker, receives metrics back
+- Still uses `mlPipeline.saveModelToDatabase` on the main thread (needs Supabase client)
+- Progress bar driven by worker progress messages
 
-- Force-directed graph visualization using node/edge data
-- Nodes sized by connection count (gateways larger)
-- Edges colored by traffic volume
-- Click node to show asset details from `asset_inventory`
-- Add "Topology" tab to main dashboard
+### 4. `src/hooks/useMLPipeline.ts`
+- Add a new `saveMetricsToDatabase` method that accepts raw metrics (so the component can save worker results without needing a full MLModel with a live classifier instance)
+- Existing methods remain for non-worker use cases (e.g., `predict` for realtime inference)
 
-### Modify `ingest-traffic`
-
-- Accept `topology[]` payload
-- Upsert connection records
-
----
-
-## Module 6 — Data Retention Engine
-
-### Python Agent: `docs/data_retention_manager.py`
-
-- Configurable retention policies per table
-- Calls `cleanup-data` edge function periodically
-- Logs cleanup statistics locally
-
-### Database: `retention_policies` Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | uuid | Primary key |
-| table_name | text | Target table |
-| retention_days | integer | Keep data for N days |
-| archive_before_delete | boolean | Copy to archive first |
-| is_active | boolean | Enable/disable policy |
-
-### Edge Function: `supabase/functions/cleanup-data/index.ts`
-
-- Reads active retention policies
-- For each table, deletes rows where `created_at < now() - retention_days`
-- Optionally archives to `archived_events` table before deletion
-- Returns cleanup statistics
-
-### UI: `src/components/DataRetention.tsx`
-
-- Policy management interface (table, days, archive flag)
-- Manual "Run Cleanup" button
-- Cleanup history log
-- Storage usage estimates
-- Add "Retention" tab to dashboard
-
----
-
-## Module 7 — Notification Dispatcher (Python)
-
-### Python Agent: `docs/notification_dispatcher.py`
-
-- Multi-channel dispatcher: email, Slack, webhook, SMS
-- Reads configs from `notification_configs` table (existing)
-- Called by `incident_scoring_engine.py` or `response_manager.py` when thresholds are met
-- Supports batching and rate limiting
-- Logs dispatch results
-
-### Integration Points
-
-- `incident_scoring_engine.py` calls dispatcher for `score >= 100`
-- `response_manager.py` calls dispatcher for executed actions
-- Deduplication via `dedupe_key` (60-second window)
-
-### Channels
-
-| Channel | Implementation |
-|---------|----------------|
-| Email | Call `send-alert-notification` edge function |
-| Webhook | Direct HTTP POST |
-| Slack | Webhook URL or future connector |
-| SMS | Placeholder for Twilio integration |
-
----
-
-## Files Summary
-
-| Action | File |
-|--------|------|
-| **Create** | `docs/network_mapper.py` — topology discovery agent |
-| **Create** | `docs/data_retention_manager.py` — retention automation |
-| **Create** | `docs/notification_dispatcher.py` — multi-channel dispatcher |
-| **Create** | `supabase/functions/cleanup-data/index.ts` — data cleanup |
-| **Create** | `src/components/NetworkTopology.tsx` — graph visualization |
-| **Create** | `src/components/DataRetention.tsx` — retention policies UI |
-| **Modify** | `supabase/functions/ingest-traffic/index.ts` — accept topology payload |
-| **Modify** | `src/pages/Index.tsx` — add Topology and Retention tabs |
-| **Migration** | Create `network_topology` and `retention_policies` tables |
+## Technical Notes
+- Vite bundles worker dependencies automatically when using `new URL('./worker.ts', import.meta.url)`
+- The worker won't return a live classifier object (can't transfer class instances across threads), so realtime inference will still use main-thread prediction with a fallback heuristic or re-instantiate from saved model data
+- No changes to `mlAlgorithms.ts` — the worker will import it directly since Vite bundles it
 
