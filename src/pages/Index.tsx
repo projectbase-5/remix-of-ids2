@@ -31,6 +31,7 @@ import AssetInventory from "@/components/AssetInventory";
 import NetworkTopology from "@/components/NetworkTopology";
 import DataRetention from "@/components/DataRetention";
 import RiskScoreDashboard from "@/components/RiskScoreDashboard";
+import AttackTimeline from "@/components/AttackTimeline";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { useIDSDataStore } from "@/hooks/useIDSDataStore";
@@ -149,6 +150,7 @@ const Index = () => {
               <TabsTrigger value="topology">Topology</TabsTrigger>
               <TabsTrigger value="retention">Retention</TabsTrigger>
               <TabsTrigger value="risk">Risk Scores</TabsTrigger>
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
             </TabsList>
           </div>
 
@@ -316,6 +318,10 @@ const Index = () => {
 
           <TabsContent value="risk">
             <RiskScoreDashboard />
+          </TabsContent>
+
+          <TabsContent value="timeline">
+            <AttackTimeline />
           </TabsContent>
         </Tabs>
       </main>

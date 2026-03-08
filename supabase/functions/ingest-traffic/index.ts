@@ -309,7 +309,32 @@ Deno.serve(async (req) => {
     }
 
     // ==================================================================
-    // 10. Upsert host risk scores into `host_risk_scores`
+    // 10.5 Upsert attack timelines into `attack_timelines`
+    // ==================================================================
+    if (body.attack_timelines && Array.isArray(body.attack_timelines) && body.attack_timelines.length > 0) {
+      let timelinesUpserted = 0;
+      for (const tl of body.attack_timelines) {
+        const { error } = await supabase.from("attack_timelines").upsert({
+          source_ip: tl.source_ip,
+          timeline_events: tl.timeline_events || [],
+          kill_chain_phases: tl.kill_chain_phases || [],
+          total_events: tl.total_events || 0,
+          first_event_at: tl.first_event_at || null,
+          last_event_at: tl.last_event_at || null,
+          is_active: tl.is_active ?? true,
+        }, { onConflict: "source_ip" });
+        if (error) {
+          console.error("Error upserting timeline:", error);
+          results.timelines_error = error.message;
+        } else {
+          timelinesUpserted++;
+        }
+      }
+      results.timelines_upserted = timelinesUpserted;
+    }
+
+    // ==================================================================
+    // 11. Upsert host risk scores into `host_risk_scores`
     // ==================================================================
     if (body.risk_scores && Array.isArray(body.risk_scores) && body.risk_scores.length > 0) {
       let riskUpserted = 0;

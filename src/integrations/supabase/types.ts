@@ -163,6 +163,45 @@ export type Database = {
         }
         Relationships: []
       }
+      attack_timelines: {
+        Row: {
+          created_at: string
+          first_event_at: string | null
+          id: string
+          is_active: boolean
+          kill_chain_phases: Json
+          last_event_at: string | null
+          source_ip: string
+          timeline_events: Json
+          total_events: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          first_event_at?: string | null
+          id?: string
+          is_active?: boolean
+          kill_chain_phases?: Json
+          last_event_at?: string | null
+          source_ip: string
+          timeline_events?: Json
+          total_events?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          first_event_at?: string | null
+          id?: string
+          is_active?: boolean
+          kill_chain_phases?: Json
+          last_event_at?: string | null
+          source_ip?: string
+          timeline_events?: Json
+          total_events?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       correlation_events: {
         Row: {
           attack_type: string
