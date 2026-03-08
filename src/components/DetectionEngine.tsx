@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Brain, AlertTriangle, Play, Pause } from "lucide-react";
+import { Brain, AlertTriangle, Play, Pause, FlaskConical } from "lucide-react";
 import RuleManager from "./RuleManager";
 import ThreatCorrelator from "./ThreatCorrelator";
+import AttackSimulator from "./AttackSimulator";
 import { useToast } from "@/hooks/use-toast";
 import { useIDSDataStore, NetworkEvent, ThreatDetection } from "@/hooks/useIDSDataStore";
 import { useThreatIntelligence } from "@/hooks/useThreatIntelligence";
