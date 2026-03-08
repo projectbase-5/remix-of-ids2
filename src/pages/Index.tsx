@@ -108,6 +108,8 @@ const Index = () => {
               <TabsTrigger value="correlation">Correlation</TabsTrigger>
               <TabsTrigger value="ml-metrics">ML Metrics</TabsTrigger>
               <TabsTrigger value="hunt">Hunt</TabsTrigger>
+              <TabsTrigger value="topology">Topology</TabsTrigger>
+              <TabsTrigger value="retention">Retention</TabsTrigger>
             </TabsList>
           </div>
 
