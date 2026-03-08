@@ -876,6 +876,54 @@ export type Database = {
         }
         Relationships: []
       }
+      scored_incidents: {
+        Row: {
+          alert_count: number
+          alert_ids: Json
+          attack_types: Json
+          created_at: string
+          first_alert_at: string
+          id: string
+          last_alert_at: string
+          sequence_pattern: string | null
+          severity: string
+          source_ip: string
+          status: string
+          total_score: number
+          updated_at: string
+        }
+        Insert: {
+          alert_count?: number
+          alert_ids?: Json
+          attack_types?: Json
+          created_at?: string
+          first_alert_at: string
+          id?: string
+          last_alert_at: string
+          sequence_pattern?: string | null
+          severity?: string
+          source_ip: string
+          status?: string
+          total_score?: number
+          updated_at?: string
+        }
+        Update: {
+          alert_count?: number
+          alert_ids?: Json
+          attack_types?: Json
+          created_at?: string
+          first_alert_at?: string
+          id?: string
+          last_alert_at?: string
+          sequence_pattern?: string | null
+          severity?: string
+          source_ip?: string
+          status?: string
+          total_score?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       system_metrics_log: {
         Row: {
           active_connections: number | null
