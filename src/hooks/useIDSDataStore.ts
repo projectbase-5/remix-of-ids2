@@ -465,6 +465,7 @@ export const useIDSDataStore = () => {
           inbound: 0,
           outbound: 0,
           threats: 0,
+          events: 0,
         });
       }
       setTrafficData(resetData);
