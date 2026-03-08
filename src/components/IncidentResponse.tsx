@@ -158,6 +158,11 @@ export default function IncidentResponse() {
   const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
   const [linkedAlerts, setLinkedAlerts] = useState<Record<string, any[]>>({});
 
+  // Response Actions state
+  const [responseActions, setResponseActions] = useState<any[]>([]);
+  const [responseLoading, setResponseLoading] = useState(false);
+  const [executingAction, setExecutingAction] = useState<string | null>(null);
+
   const loadIncidents = useCallback(async () => {
     setLoading(true);
     try {
