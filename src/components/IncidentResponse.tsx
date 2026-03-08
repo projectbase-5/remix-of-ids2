@@ -13,6 +13,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useRealtimeSubscription } from '@/hooks/useRealtimeSubscription';
@@ -30,7 +35,12 @@ import {
   ArrowRight,
   Pause,
   Play,
-  RotateCcw
+  RotateCcw,
+  Flame,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Zap,
 } from 'lucide-react';
 import { IncidentLog } from '@/hooks/useThreatIntelligence';
 
@@ -49,6 +59,22 @@ interface IncidentDetails extends IncidentLog {
   resolution?: string;
   impactScore: number;
   containmentStatus: 'not_started' | 'in_progress' | 'contained' | 'eradicated' | 'recovered';
+}
+
+interface ScoredIncident {
+  id: string;
+  source_ip: string;
+  total_score: number;
+  alert_count: number;
+  attack_types: string[];
+  severity: string;
+  first_alert_at: string;
+  last_alert_at: string;
+  status: string;
+  alert_ids: string[];
+  sequence_pattern: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const PLAYBOOKS = [
@@ -117,6 +143,13 @@ export default function IncidentResponse() {
   const [activePlaybook, setActivePlaybook] = useState<typeof PLAYBOOKS[0] | null>(null);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [activeTab, setActiveTab] = useState('incidents');
+
+  // Priority Queue state
+  const [scoredIncidents, setScoredIncidents] = useState<ScoredIncident[]>([]);
+  const [scoredLoading, setScoredLoading] = useState(false);
+  const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null);
+  const [linkedAlerts, setLinkedAlerts] = useState<Record<string, any[]>>({});
 
   const loadIncidents = useCallback(async () => {
     setLoading(true);
@@ -156,14 +189,41 @@ export default function IncidentResponse() {
     }
   }, []);
 
+  const loadScoredIncidents = useCallback(async () => {
+    setScoredLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('scored_incidents')
+        .select('*')
+        .order('total_score', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      setScoredIncidents((data || []).map((d) => ({
+        ...d,
+        attack_types: Array.isArray(d.attack_types) ? d.attack_types as string[] : [],
+        alert_ids: Array.isArray(d.alert_ids) ? d.alert_ids as string[] : [],
+      })));
+    } catch (error) {
+      console.error('Error loading scored incidents:', error);
+    } finally {
+      setScoredLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadIncidents();
-  }, [loadIncidents]);
+    loadScoredIncidents();
+  }, [loadIncidents, loadScoredIncidents]);
 
-  // Realtime subscription for incident changes
   useRealtimeSubscription('incident_logs', ['INSERT', 'UPDATE'], useCallback(() => {
     loadIncidents();
   }, [loadIncidents]));
+
+  useRealtimeSubscription('scored_incidents', ['INSERT', 'UPDATE'], useCallback(() => {
+    loadScoredIncidents();
+  }, [loadScoredIncidents]));
 
   const calculateImpactScore = (severity: string): number => {
     switch (severity.toLowerCase()) {
@@ -223,13 +283,9 @@ export default function IncidentResponse() {
 
   const executePlaybookStep = async (stepOrder: number, action: string, automated: boolean) => {
     addTimelineEntry(`Executing: ${action}`);
-    
-    // Simulate step execution
     await new Promise(resolve => setTimeout(resolve, automated ? 500 : 1000));
-    
     setCompletedSteps(prev => [...prev, stepOrder]);
     addTimelineEntry(`Completed: ${action}`);
-    
     toast.success(`Step ${stepOrder} completed: ${action}`);
   };
 
@@ -242,7 +298,6 @@ export default function IncidentResponse() {
 
   const addNote = () => {
     if (!newNote.trim() || !selectedIncident) return;
-    
     addTimelineEntry(`Note added: ${newNote}`);
     setSelectedIncident(prev => prev ? {
       ...prev,
@@ -282,6 +337,87 @@ export default function IncidentResponse() {
     }
   };
 
+  const getScoreBadgeColor = (score: number) => {
+    if (score >= 100) return 'bg-destructive text-destructive-foreground';
+    if (score >= 60) return 'bg-red-500 text-white';
+    if (score >= 30) return 'bg-yellow-500 text-yellow-50';
+    return 'bg-muted text-muted-foreground';
+  };
+
+  const triggerScoring = async () => {
+    try {
+      toast.info('Running incident scoring...');
+      const { data, error } = await supabase.functions.invoke('score-incidents', {
+        body: { window_minutes: 60 },
+      });
+      if (error) throw error;
+      toast.success(`Scored ${data?.scored || 0} incidents from ${data?.total_alerts_processed || 0} alerts`);
+      loadScoredIncidents();
+    } catch (err) {
+      console.error('Scoring error:', err);
+      toast.error('Failed to run scoring');
+    }
+  };
+
+  const investigateScoredIncident = async (scored: ScoredIncident) => {
+    try {
+      // Create a formal incident_log entry
+      const { error } = await supabase.from('incident_logs').insert({
+        incident_type: scored.attack_types.join(' + ') || 'Aggregated Incident',
+        severity: scored.severity,
+        source_ip: scored.source_ip,
+        status: 'investigating',
+        details: {
+          scored_incident_id: scored.id,
+          total_score: scored.total_score,
+          attack_types: scored.attack_types,
+          alert_count: scored.alert_count,
+          sequence_pattern: scored.sequence_pattern,
+        },
+      });
+
+      if (error) throw error;
+
+      // Update scored incident status
+      await supabase
+        .from('scored_incidents')
+        .update({ status: 'investigating' })
+        .eq('id', scored.id);
+
+      toast.success('Promoted to formal incident for investigation');
+      loadIncidents();
+      loadScoredIncidents();
+    } catch (err) {
+      console.error('Error promoting incident:', err);
+      toast.error('Failed to promote incident');
+    }
+  };
+
+  const loadLinkedAlerts = async (scoredId: string, alertIds: string[]) => {
+    if (linkedAlerts[scoredId]) {
+      setExpandedIncidentId(expandedIncidentId === scoredId ? null : scoredId);
+      return;
+    }
+
+    if (alertIds.length === 0) {
+      setLinkedAlerts(prev => ({ ...prev, [scoredId]: [] }));
+      setExpandedIncidentId(scoredId);
+      return;
+    }
+
+    try {
+      const { data } = await supabase
+        .from('live_alerts')
+        .select('id, alert_type, severity, source_ip, destination_ip, description, created_at')
+        .in('id', alertIds.slice(0, 20));
+
+      setLinkedAlerts(prev => ({ ...prev, [scoredId]: data || [] }));
+      setExpandedIncidentId(scoredId);
+    } catch {
+      setExpandedIncidentId(scoredId);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Stats */}
@@ -316,12 +452,12 @@ export default function IncidentResponse() {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Investigating</p>
-                <p className="text-2xl font-bold text-blue-500">
-                  {incidents.filter(i => i.status === 'investigating').length}
+                <p className="text-sm text-muted-foreground">Scored Incidents</p>
+                <p className="text-2xl font-bold text-primary">
+                  {scoredIncidents.filter(s => s.status === 'open').length}
                 </p>
               </div>
-              <Activity className="h-8 w-8 text-blue-500" />
+              <Flame className="h-8 w-8 text-primary" />
             </div>
           </CardContent>
         </Card>
@@ -343,275 +479,417 @@ export default function IncidentResponse() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Incident List */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <Shield className="h-5 w-5" />
-              <span>Incidents</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[600px]">
-              <div className="space-y-2">
-                {loading ? (
-                  <div className="text-center text-muted-foreground py-4">Loading...</div>
-                ) : incidents.length === 0 ? (
-                  <div className="text-center text-muted-foreground py-4">No incidents</div>
-                ) : (
-                  incidents.map((incident) => (
-                    <div
-                      key={incident.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedIncident?.id === incident.id 
-                          ? 'border-primary bg-primary/5' 
-                          : 'hover:bg-muted/50'
-                      }`}
-                      onClick={() => {
-                        setSelectedIncident(incident);
-                        setActivePlaybook(null);
-                        setCompletedSteps([]);
-                      }}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <Badge className={getSeverityColor(incident.severity)}>
-                          {incident.severity}
-                        </Badge>
-                        <Badge className={getStatusColor(incident.status)}>
-                          {incident.status}
-                        </Badge>
-                      </div>
-                      <div className="font-medium text-sm truncate">
-                        {incident.incident_type}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {incident.source_ip && `From: ${incident.source_ip}`}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(incident.created_at).toLocaleString()}
-                      </div>
-                    </div>
-                  ))
-                )}
+      {/* Top-level tabs: Priority Queue vs traditional Incidents */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="priority-queue" className="flex items-center gap-1.5">
+            <Flame className="h-4 w-4" />
+            Priority Queue
+          </TabsTrigger>
+          <TabsTrigger value="incidents" className="flex items-center gap-1.5">
+            <Shield className="h-4 w-4" />
+            Incidents
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ============== PRIORITY QUEUE TAB ============== */}
+        <TabsContent value="priority-queue">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Flame className="h-5 w-5" />
+                    Incident Priority Queue
+                  </CardTitle>
+                  <CardDescription>
+                    Alerts aggregated by source IP, scored by severity + diversity + kill chain sequence
+                  </CardDescription>
+                </div>
+                <Button onClick={triggerScoring} size="sm">
+                  <Zap className="h-4 w-4 mr-1" />
+                  Run Scoring
+                </Button>
               </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        {/* Incident Details */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>Incident Details</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!selectedIncident ? (
-              <div className="text-center text-muted-foreground py-16">
-                Select an incident to view details
-              </div>
-            ) : (
-              <Tabs defaultValue="overview" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                  <TabsTrigger value="playbook">Playbook</TabsTrigger>
-                  <TabsTrigger value="notes">Notes</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm text-muted-foreground">Type</label>
-                        <p className="font-medium">{selectedIncident.incident_type}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-muted-foreground">Severity</label>
-                        <Badge className={getSeverityColor(selectedIncident.severity)}>
-                          {selectedIncident.severity}
-                        </Badge>
-                      </div>
-                      <div>
-                        <label className="text-sm text-muted-foreground">Source IP</label>
-                        <p className="font-mono">{selectedIncident.source_ip || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm text-muted-foreground">Destination IP</label>
-                        <p className="font-mono">{selectedIncident.destination_ip || 'N/A'}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm text-muted-foreground">Impact Score</label>
-                      <div className="flex items-center space-x-3 mt-1">
-                        <Progress value={selectedIncident.impactScore} className="flex-1" />
-                        <span className="font-bold">{selectedIncident.impactScore}%</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm text-muted-foreground">Containment Status</label>
-                      <div className="flex items-center space-x-3 mt-1">
-                        <Progress 
-                          value={getContainmentProgress(selectedIncident.containmentStatus)} 
-                          className="flex-1" 
-                        />
-                        <Badge variant="outline">{selectedIncident.containmentStatus}</Badge>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-sm text-muted-foreground">Update Status</label>
-                      <Select
-                        value={selectedIncident.status}
-                        onValueChange={(value) => updateIncidentStatus(selectedIncident.id, value)}
+            </CardHeader>
+            <CardContent>
+              {scoredLoading ? (
+                <div className="text-center text-muted-foreground py-8">Loading scored incidents...</div>
+              ) : scoredIncidents.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  <p>No scored incidents yet.</p>
+                  <p className="text-sm mt-1">Click "Run Scoring" to aggregate recent alerts.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {scoredIncidents.map((scored) => (
+                    <div key={scored.id} className="border rounded-lg">
+                      <div
+                        className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                        onClick={() => loadLinkedAlerts(scored.id, scored.alert_ids)}
                       >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="investigating">Investigating</SelectItem>
-                          <SelectItem value="contained">Contained</SelectItem>
-                          <SelectItem value="resolved">Resolved</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="timeline">
-                  <ScrollArea className="h-[400px]">
-                    <div className="space-y-4">
-                      {selectedIncident.timeline.map((entry, index) => (
-                        <div key={entry.id} className="flex items-start space-x-3">
-                          <div className="flex flex-col items-center">
-                            <div className="w-3 h-3 bg-primary rounded-full" />
-                            {index < selectedIncident.timeline.length - 1 && (
-                              <div className="w-0.5 h-full bg-border mt-1" />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {expandedIncidentId === scored.id ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
                             )}
+                            <Badge className={getScoreBadgeColor(scored.total_score)}>
+                              Score: {scored.total_score}
+                            </Badge>
+                            <Badge className={getSeverityColor(scored.severity)}>
+                              {scored.severity}
+                            </Badge>
+                            <span className="font-mono text-sm">{scored.source_ip}</span>
+                            <span className="text-sm text-muted-foreground">
+                              {scored.alert_count} alert{scored.alert_count !== 1 ? 's' : ''}
+                            </span>
                           </div>
-                          <div className="flex-1 pb-4">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm font-medium">{entry.action}</span>
-                            </div>
-                            <div className="flex items-center space-x-2 text-xs text-muted-foreground mt-1">
-                              <User className="h-3 w-3" />
-                              <span>{entry.user}</span>
-                              <span>•</span>
-                              <Clock className="h-3 w-3" />
-                              <span>{new Date(entry.timestamp).toLocaleString()}</span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </TabsContent>
-
-                <TabsContent value="playbook">
-                  {!activePlaybook ? (
-                    <div className="grid gap-4 md:grid-cols-2">
-                      {PLAYBOOKS.map((playbook) => (
-                        <Card key={playbook.id} className="cursor-pointer hover:border-primary transition-colors">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">{playbook.name}</CardTitle>
-                            <CardDescription>{playbook.description}</CardDescription>
-                          </CardHeader>
-                          <CardContent>
-                            <div className="text-sm text-muted-foreground mb-3">
-                              {playbook.steps.length} steps
-                            </div>
-                            <Button onClick={() => startPlaybook(playbook)} className="w-full">
-                              <Play className="h-4 w-4 mr-2" />
-                              Start Playbook
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">{activePlaybook.name}</h4>
-                        <Button variant="outline" size="sm" onClick={() => setActivePlaybook(null)}>
-                          <RotateCcw className="h-4 w-4 mr-1" />
-                          Reset
-                        </Button>
-                      </div>
-                      <Progress 
-                        value={(completedSteps.length / activePlaybook.steps.length) * 100} 
-                      />
-                      <div className="space-y-2">
-                        {activePlaybook.steps.map((step) => (
-                          <div 
-                            key={step.order}
-                            className={`p-3 rounded border flex items-center justify-between ${
-                              completedSteps.includes(step.order) ? 'bg-green-50 border-green-200' : ''
-                            }`}
-                          >
-                            <div className="flex items-center space-x-3">
-                              {completedSteps.includes(step.order) ? (
-                                <CheckCircle className="h-5 w-5 text-green-500" />
-                              ) : (
-                                <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs">
-                                  {step.order}
-                                </div>
-                              )}
-                              <span className={completedSteps.includes(step.order) ? 'text-muted-foreground line-through' : ''}>
-                                {step.action}
-                              </span>
-                              <Badge variant={step.automated ? 'default' : 'outline'}>
-                                {step.automated ? 'Auto' : 'Manual'}
-                              </Badge>
-                            </div>
-                            {!completedSteps.includes(step.order) && (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {scored.status}
+                            </Badge>
+                            {scored.status === 'open' && (
                               <Button
                                 size="sm"
-                                onClick={() => executePlaybookStep(step.order, step.action, step.automated)}
-                                disabled={step.order > 1 && !completedSteps.includes(step.order - 1)}
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  investigateScoredIncident(scored);
+                                }}
                               >
-                                <ArrowRight className="h-4 w-4" />
+                                <Search className="h-3 w-3 mr-1" />
+                                Investigate
                               </Button>
                             )}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </TabsContent>
+                        </div>
 
-                <TabsContent value="notes">
-                  <div className="space-y-4">
-                    <div className="flex space-x-2">
-                      <Textarea
-                        placeholder="Add investigation notes..."
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        className="flex-1"
-                      />
-                      <Button onClick={addNote} disabled={!newNote.trim()}>
-                        <MessageSquare className="h-4 w-4 mr-1" />
-                        Add
-                      </Button>
-                    </div>
-                    {selectedIncident.notes && (
-                      <div className="p-4 rounded border bg-muted/50">
-                        <pre className="text-sm whitespace-pre-wrap font-sans">
-                          {selectedIncident.notes}
-                        </pre>
+                        <div className="flex items-center gap-2 mt-2 ml-7">
+                          {scored.attack_types.map((type) => (
+                            <Badge key={type} variant="secondary" className="text-xs">
+                              {type}
+                            </Badge>
+                          ))}
+                          {scored.sequence_pattern && (
+                            <Badge className="bg-primary/20 text-primary text-xs border border-primary/30">
+                              ⛓ {scored.sequence_pattern}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <div className="text-xs text-muted-foreground mt-2 ml-7">
+                          Window: {new Date(scored.first_alert_at).toLocaleString()} → {new Date(scored.last_alert_at).toLocaleString()}
+                        </div>
                       </div>
+
+                      {expandedIncidentId === scored.id && (
+                        <div className="border-t px-4 py-3 bg-muted/20">
+                          <p className="text-sm font-medium mb-2">Linked Alerts</p>
+                          {(linkedAlerts[scored.id] || []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No linked alerts found</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-48 overflow-auto">
+                              {(linkedAlerts[scored.id] || []).map((alert: any) => (
+                                <div key={alert.id} className="flex items-center gap-2 text-xs p-1.5 bg-background rounded">
+                                  <Badge className={getSeverityColor(alert.severity)} >
+                                    {alert.severity}
+                                  </Badge>
+                                  <span className="font-medium">{alert.alert_type}</span>
+                                  <span className="text-muted-foreground truncate flex-1">
+                                    {alert.description}
+                                  </span>
+                                  <span className="text-muted-foreground">
+                                    {new Date(alert.created_at).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ============== TRADITIONAL INCIDENTS TAB ============== */}
+        <TabsContent value="incidents">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Incident List */}
+            <Card className="lg:col-span-1">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Shield className="h-5 w-5" />
+                  <span>Incidents</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[600px]">
+                  <div className="space-y-2">
+                    {loading ? (
+                      <div className="text-center text-muted-foreground py-4">Loading...</div>
+                    ) : incidents.length === 0 ? (
+                      <div className="text-center text-muted-foreground py-4">No incidents</div>
+                    ) : (
+                      incidents.map((incident) => (
+                        <div
+                          key={incident.id}
+                          className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                            selectedIncident?.id === incident.id 
+                              ? 'border-primary bg-primary/5' 
+                              : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => {
+                            setSelectedIncident(incident);
+                            setActivePlaybook(null);
+                            setCompletedSteps([]);
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <Badge className={getSeverityColor(incident.severity)}>
+                              {incident.severity}
+                            </Badge>
+                            <Badge className={getStatusColor(incident.status)}>
+                              {incident.status}
+                            </Badge>
+                          </div>
+                          <div className="font-medium text-sm truncate">
+                            {incident.incident_type}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {incident.source_ip && `From: ${incident.source_ip}`}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(incident.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      ))
                     )}
                   </div>
-                </TabsContent>
-              </Tabs>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Incident Details */}
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <FileText className="h-5 w-5" />
+                  <span>Incident Details</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!selectedIncident ? (
+                  <div className="text-center text-muted-foreground py-16">
+                    Select an incident to view details
+                  </div>
+                ) : (
+                  <Tabs defaultValue="overview" className="space-y-4">
+                    <TabsList className="grid w-full grid-cols-4">
+                      <TabsTrigger value="overview">Overview</TabsTrigger>
+                      <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                      <TabsTrigger value="playbook">Playbook</TabsTrigger>
+                      <TabsTrigger value="notes">Notes</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="overview">
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm text-muted-foreground">Type</label>
+                            <p className="font-medium">{selectedIncident.incident_type}</p>
+                          </div>
+                          <div>
+                            <label className="text-sm text-muted-foreground">Severity</label>
+                            <Badge className={getSeverityColor(selectedIncident.severity)}>
+                              {selectedIncident.severity}
+                            </Badge>
+                          </div>
+                          <div>
+                            <label className="text-sm text-muted-foreground">Source IP</label>
+                            <p className="font-mono">{selectedIncident.source_ip || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <label className="text-sm text-muted-foreground">Destination IP</label>
+                            <p className="font-mono">{selectedIncident.destination_ip || 'N/A'}</p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm text-muted-foreground">Impact Score</label>
+                          <div className="flex items-center space-x-3 mt-1">
+                            <Progress value={selectedIncident.impactScore} className="flex-1" />
+                            <span className="font-bold">{selectedIncident.impactScore}%</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm text-muted-foreground">Containment Status</label>
+                          <div className="flex items-center space-x-3 mt-1">
+                            <Progress 
+                              value={getContainmentProgress(selectedIncident.containmentStatus)} 
+                              className="flex-1" 
+                            />
+                            <Badge variant="outline">{selectedIncident.containmentStatus}</Badge>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-sm text-muted-foreground">Update Status</label>
+                          <Select
+                            value={selectedIncident.status}
+                            onValueChange={(value) => updateIncidentStatus(selectedIncident.id, value)}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pending</SelectItem>
+                              <SelectItem value="investigating">Investigating</SelectItem>
+                              <SelectItem value="contained">Contained</SelectItem>
+                              <SelectItem value="resolved">Resolved</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="timeline">
+                      <ScrollArea className="h-[400px]">
+                        <div className="space-y-4">
+                          {selectedIncident.timeline.map((entry, index) => (
+                            <div key={entry.id} className="flex items-start space-x-3">
+                              <div className="flex flex-col items-center">
+                                <div className="w-3 h-3 bg-primary rounded-full" />
+                                {index < selectedIncident.timeline.length - 1 && (
+                                  <div className="w-0.5 h-full bg-border mt-1" />
+                                )}
+                              </div>
+                              <div className="flex-1 pb-4">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-medium">{entry.action}</span>
+                                </div>
+                                <div className="flex items-center space-x-2 text-xs text-muted-foreground mt-1">
+                                  <User className="h-3 w-3" />
+                                  <span>{entry.user}</span>
+                                  <span>•</span>
+                                  <Clock className="h-3 w-3" />
+                                  <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </TabsContent>
+
+                    <TabsContent value="playbook">
+                      {!activePlaybook ? (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          {PLAYBOOKS.map((playbook) => (
+                            <Card key={playbook.id} className="cursor-pointer hover:border-primary transition-colors">
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-lg">{playbook.name}</CardTitle>
+                                <CardDescription>{playbook.description}</CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <div className="text-sm text-muted-foreground mb-3">
+                                  {playbook.steps.length} steps
+                                </div>
+                                <Button onClick={() => startPlaybook(playbook)} className="w-full">
+                                  <Play className="h-4 w-4 mr-2" />
+                                  Start Playbook
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-medium">{activePlaybook.name}</h4>
+                            <Button variant="outline" size="sm" onClick={() => setActivePlaybook(null)}>
+                              <RotateCcw className="h-4 w-4 mr-1" />
+                              Reset
+                            </Button>
+                          </div>
+                          <Progress 
+                            value={(completedSteps.length / activePlaybook.steps.length) * 100} 
+                          />
+                          <div className="space-y-2">
+                            {activePlaybook.steps.map((step) => (
+                              <div 
+                                key={step.order}
+                                className={`p-3 rounded border flex items-center justify-between ${
+                                  completedSteps.includes(step.order) ? 'bg-green-50 border-green-200' : ''
+                                }`}
+                              >
+                                <div className="flex items-center space-x-3">
+                                  {completedSteps.includes(step.order) ? (
+                                    <CheckCircle className="h-5 w-5 text-green-500" />
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center text-xs">
+                                      {step.order}
+                                    </div>
+                                  )}
+                                  <span className={completedSteps.includes(step.order) ? 'text-muted-foreground line-through' : ''}>
+                                    {step.action}
+                                  </span>
+                                  <Badge variant={step.automated ? 'default' : 'outline'}>
+                                    {step.automated ? 'Auto' : 'Manual'}
+                                  </Badge>
+                                </div>
+                                {!completedSteps.includes(step.order) && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => executePlaybookStep(step.order, step.action, step.automated)}
+                                    disabled={step.order > 1 && !completedSteps.includes(step.order - 1)}
+                                  >
+                                    <ArrowRight className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="notes">
+                      <div className="space-y-4">
+                        <div className="flex space-x-2">
+                          <Textarea
+                            placeholder="Add investigation notes..."
+                            value={newNote}
+                            onChange={(e) => setNewNote(e.target.value)}
+                            className="flex-1"
+                          />
+                          <Button onClick={addNote} disabled={!newNote.trim()}>
+                            <MessageSquare className="h-4 w-4 mr-1" />
+                            Add
+                          </Button>
+                        </div>
+                        {selectedIncident.notes && (
+                          <div className="p-4 rounded border bg-muted/50">
+                            <pre className="text-sm whitespace-pre-wrap font-sans">
+                              {selectedIncident.notes}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

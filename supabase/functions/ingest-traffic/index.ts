@@ -209,6 +209,52 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ==================================================================
+    // 6. Upsert scored incidents from agent-side scoring engine
+    // ==================================================================
+    if (body.incidents && Array.isArray(body.incidents) && body.incidents.length > 0) {
+      let incidentsInserted = 0;
+      for (const inc of body.incidents) {
+        // Check for existing open incident for this IP
+        const { data: existing } = await supabase
+          .from("scored_incidents")
+          .select("id, alert_ids")
+          .eq("source_ip", inc.source_ip)
+          .eq("status", "open")
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          await supabase
+            .from("scored_incidents")
+            .update({
+              total_score: inc.total_score,
+              alert_count: inc.alert_count,
+              attack_types: inc.attack_types,
+              severity: inc.severity,
+              first_alert_at: inc.first_alert_at ? new Date(inc.first_alert_at * 1000).toISOString() : new Date().toISOString(),
+              last_alert_at: inc.last_alert_at ? new Date(inc.last_alert_at * 1000).toISOString() : new Date().toISOString(),
+              sequence_pattern: inc.sequence_pattern || null,
+            })
+            .eq("id", existing[0].id);
+        } else {
+          await supabase.from("scored_incidents").insert({
+            source_ip: inc.source_ip,
+            total_score: inc.total_score,
+            alert_count: inc.alert_count,
+            attack_types: inc.attack_types || [],
+            severity: inc.severity || "low",
+            first_alert_at: inc.first_alert_at ? new Date(inc.first_alert_at * 1000).toISOString() : new Date().toISOString(),
+            last_alert_at: inc.last_alert_at ? new Date(inc.last_alert_at * 1000).toISOString() : new Date().toISOString(),
+            sequence_pattern: inc.sequence_pattern || null,
+            status: inc.status || "open",
+            alert_ids: inc.alert_ids || [],
+          });
+        }
+        incidentsInserted++;
+      }
+      results.incidents_inserted = incidentsInserted;
+    }
+
     return new Response(JSON.stringify({ success: true, ...results }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
